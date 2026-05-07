@@ -1,0 +1,8 @@
+{
+  "name": "לקוח ב",
+  "description": "",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}
