@@ -267,6 +267,27 @@ async function startServer() {
     }
   });
 
+  // NEW: API Route for categories by tenant name
+  app.get("/api/categories/:tenantName", async (req, res) => {
+    const { tenantName } = req.params;
+    const azureApiUrl = `https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/categories/tenantName/${encodeURIComponent(tenantName)}`;
+
+    try {
+      console.log(`Fetching categories from Azure API: ${azureApiUrl}`);
+      const response = await fetchWithTimeout(azureApiUrl, {}, 15000);
+      
+      if (!response.ok) {
+        throw new Error(`Azure API responded with status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      res.json(data);
+    } catch (err: any) {
+      console.error("Azure Categories API Error:", err);
+      res.status(500).json({ error: "Failed to fetch categories from Azure", details: err.message });
+    }
+  });
+
   // NEW: API Route for get-files from Azure Web Service
   app.get("/api/files/get-files", async (req, res) => {
     const { folder, clientName, fileName } = req.query;
@@ -363,7 +384,7 @@ async function startServer() {
     const { folder, modelName, clientName } = req.query;
     if (!folder || !modelName) return res.status(400).json({ error: "folder and modelName are required" });
 
-    const activeClient = clientName || "tenantA";
+    const activeClient = clientName || "tenantB";
     
     // We use get-files for listing since get-images-by-model doesn't seem to exist as a GET endpoint
     const azureApiUrl = `https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-files?folder=${folder}&clientName=${activeClient}`;
@@ -444,7 +465,7 @@ async function startServer() {
     if (!folder || !fileName) return res.status(400).send("folder and fileName are required");
 
     // Default clientName if not passed
-    const activeClient = clientName || "tenantA";
+    const activeClient = clientName || "tenantB";
 
     const azureFileUrl = `https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=${folder}&fileName=${encodeURIComponent(fileName as string)}&clientName=${activeClient}`;
 

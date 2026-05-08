@@ -27,6 +27,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [inventory, setInventory] = React.useState<Record<string, number>>({});
   const [descriptions, setDescriptions] = React.useState<Record<string, string>>({});
   const [apiTitles, setApiTitles] = React.useState<Record<string, string>>({});
+  const [apiCategories, setApiCategories] = React.useState<any[]>([]);
+  const [productToCategory, setProductToCategory] = React.useState<Record<string, string>>({});
   const [translatedModels, setTranslatedModels] = React.useState<Record<string, { name: string, description: string }>>({});
 
   const [hoveredProduct, setHoveredProduct] = React.useState<{
@@ -84,6 +86,11 @@ const Sidebar: React.FC<SidebarProps> = ({
               if (desc) {
                 setDescriptions(prev => ({ ...prev, [normalizedName]: desc }));
               }
+              
+              const category = result.productCategory || result.category || result.categoryId || '';
+              if (category) {
+                setProductToCategory(prev => ({ ...prev, [normalizedName]: category }));
+              }
             }
           }
         } catch (jsonErr) {
@@ -92,6 +99,20 @@ const Sidebar: React.FC<SidebarProps> = ({
       }
     } catch (err) {
       // Quietly handle fetch errors
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch('/api/categories/tenantB');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setApiCategories(data);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch categories:", err);
     }
   };
 
@@ -197,6 +218,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   React.useEffect(() => {
     fetchR2Files();
+    fetchCategories();
   }, []);
 
   React.useEffect(() => {
@@ -263,27 +285,59 @@ const Sidebar: React.FC<SidebarProps> = ({
     translateModelInfo();
   }, [language, r2Files, descriptions]);
 
-  // Group files by category (folder prefix)
+  // Group files by category (associate with DB productCategory)
   const categories = React.useMemo(() => {
     const groups: Record<string, any[]> = {};
+    
+    // Create a set of valid category titles from API for easier matching
+    const apiCategoryTitles = apiCategories.map(c => (c.categoryName || c.name || c.title || '').toString().toLowerCase());
+    
     r2Files.forEach(file => {
-      const parts = file.key.split('/');
-      let category = 'General';
+      const originalDisplayName = file.name.replace(/\.fbx$/i, '');
+      const normalizedName = originalDisplayName.trim().toLowerCase();
       
-      if (parts.length > 1) {
-        // If the first part is 'files', look for the next part as the category
-        if (parts[0].toLowerCase() === 'files') {
-          category = parts.length > 2 ? parts[1] : 'General';
+      // Try to get category from product metadata
+      let category = productToCategory[normalizedName] || 'General';
+      
+      // Validate that the category actually exists in our apiCategories list
+      // If it doesn't match exactly, we might want to check the folder fallback
+      const lowCategory = category.toLowerCase();
+      const matchedCategory = apiCategories.find(c => {
+        const name = (c.categoryName || c.name || c.title || '').toString().toLowerCase();
+        const id = (c.categoryId || c.id || '').toString().toLowerCase();
+        return name === lowCategory || id === lowCategory;
+      });
+
+      if (matchedCategory) {
+        category = matchedCategory.categoryName || matchedCategory.name || matchedCategory.title || category;
+      } else {
+        // Fallback to original folder grouping if no DB association found
+        const parts = file.key.split('/');
+        if (parts.length > 1) {
+          if (parts[0].toLowerCase() === 'files') {
+            category = parts.length > 2 ? parts[1] : 'General';
+          } else {
+            category = parts[0];
+          }
         } else {
-          category = parts[0];
+          category = 'General';
         }
       }
       
       if (!groups[category]) groups[category] = [];
       groups[category].push(file);
     });
+
+    // Ensure all API categories are present even if empty (optional, but requested for better UI)
+    apiCategories.forEach(c => {
+      const name = c.categoryName || c.name || c.title;
+      if (name && !groups[name]) {
+        groups[name] = [];
+      }
+    });
+
     return groups;
-  }, [r2Files]);
+  }, [r2Files, productToCategory, apiCategories]);
 
   const selectedModel = models.find(m => m.id === selectedId);
 
