@@ -28,6 +28,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [descriptions, setDescriptions] = React.useState<Record<string, string>>({});
   const [apiTitles, setApiTitles] = React.useState<Record<string, string>>({});
   const [apiCategories, setApiCategories] = React.useState<any[]>([]);
+  const [displayStatus, setDisplayStatus] = React.useState<Record<string, boolean>>({});
   const [productToCategory, setProductToCategory] = React.useState<Record<string, string>>({});
   const [translatedModels, setTranslatedModels] = React.useState<Record<string, { name: string, description: string }>>({});
 
@@ -91,14 +92,34 @@ const Sidebar: React.FC<SidebarProps> = ({
               if (category) {
                 setProductToCategory(prev => ({ ...prev, [normalizedName]: category }));
               }
+              
+              // Handle displayInSite flag (Handle boolean, string, or number)
+              const rawDisplay = result.displayInSite ?? result.DisplayInSite;
+              const display = rawDisplay === true || 
+                            rawDisplay === 1 || 
+                            String(rawDisplay).toLowerCase() === 'true';
+              
+              setDisplayStatus(prev => ({ ...prev, [normalizedName]: display }));
+            } else {
+              // Product found but empty - hide by default
+              setDisplayStatus(prev => ({ ...prev, [normalizedName]: false }));
             }
           }
         } catch (jsonErr) {
-          // Quietly handle JSON parse errors for empty or malformed API responses
+          console.error("Failed to parse product JSON:", jsonErr);
+          setDisplayStatus(prev => ({ ...prev, [normalizedName]: false }));
         }
+      } else if (res.status === 404) {
+        // Product not found in DB - Hide by default
+        console.log(`Product ${productName} not found in DB, hiding.`);
+        setDisplayStatus(prev => ({ ...prev, [normalizedName]: false }));
+      } else {
+        // Error case - Hide by default
+        setDisplayStatus(prev => ({ ...prev, [normalizedName]: false }));
       }
     } catch (err) {
-      // Quietly handle fetch errors
+      console.error("Fetch error for product:", err);
+      setDisplayStatus(prev => ({ ...prev, [normalizedName]: false }));
     }
   };
 
@@ -229,12 +250,13 @@ const Sidebar: React.FC<SidebarProps> = ({
         if (inventory[normalizedName] === undefined) {
           fetchInventory(displayName);
         }
-        if (descriptions[normalizedName] === undefined) {
+        // Always try to fetch if we don't have a definitive displayStatus
+        if (displayStatus[normalizedName] === undefined) {
           fetchDescription(displayName);
         }
       });
     }
-  }, [r2Files, inventory, descriptions]);
+  }, [r2Files, inventory, displayStatus]);
 
   React.useEffect(() => {
     const langName = language === 'he' ? 'Hebrew' : language === 'ar' ? 'Arabic' : language === 'ru' ? 'Russian' : 'English';
@@ -285,6 +307,15 @@ const Sidebar: React.FC<SidebarProps> = ({
     translateModelInfo();
   }, [language, r2Files, descriptions]);
 
+  const visibleFiles = React.useMemo(() => {
+    return r2Files.filter(file => {
+      const displayName = file.name.replace(/\.fbx$/i, '');
+      const normalizedName = displayName.trim().toLowerCase();
+      // Strictly show only those set to true
+      return displayStatus[normalizedName] === true;
+    });
+  }, [r2Files, displayStatus]);
+
   // Group files by category (associate with DB productCategory)
   const categories = React.useMemo(() => {
     const groups: Record<string, any[]> = {};
@@ -292,7 +323,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     // Create a set of valid category titles from API for easier matching
     const apiCategoryTitles = apiCategories.map(c => (c.categoryName || c.name || c.title || '').toString().toLowerCase());
     
-    r2Files.forEach(file => {
+    visibleFiles.forEach(file => {
       const originalDisplayName = file.name.replace(/\.fbx$/i, '');
       const normalizedName = originalDisplayName.trim().toLowerCase();
       
@@ -337,7 +368,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     });
 
     return groups;
-  }, [r2Files, productToCategory, apiCategories]);
+  }, [visibleFiles, productToCategory, apiCategories]);
 
   const selectedModel = models.find(m => m.id === selectedId);
 
@@ -389,94 +420,96 @@ const Sidebar: React.FC<SidebarProps> = ({
           ) : (
             <div className="flex flex-col gap-4 overflow-y-auto custom-scroll pr-2">
               {activeTab === 'all' ? (
-                r2Files.map((file) => {
-                  const originalDisplayName = file.name.replace(/\.fbx$/i, '');
-                  const normalizedName = originalDisplayName.trim().toLowerCase();
-                  const translation = translatedModels[normalizedName];
-                  const displayName = translation?.name || apiTitles[normalizedName] || originalDisplayName;
-                  
-                  // Prioritize textures that match the model name and contain "preview"
-                  const thumbnail = r2Textures.find(t => {
-                    const lowTex = t.name.toLowerCase();
-                    const lowModel = originalDisplayName.toLowerCase();
-                    return lowTex.startsWith(lowModel) && lowTex.includes('preview');
-                  }) || r2Textures.find(t => t.name.toLowerCase().startsWith(originalDisplayName.toLowerCase()));
-                  
-                  const isOutOfStock = inventory[normalizedName] === 0;
-                  const description = translation?.description || descriptions[normalizedName];
-                  
-                  return (
-                    <div 
-                      key={file.key}
-                      onMouseEnter={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        setHoveredProduct({
-                          name: displayName,
-                          description: description || '',
-                          image: thumbnail?.url || null,
-                          inventory: inventory[normalizedName],
-                          rect
-                        });
-                      }}
-                      onMouseLeave={() => setHoveredProduct(null)}
-                      onClick={(e) => {
-                        if (isOutOfStock) {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          return;
-                        }
-                        onAddFromUrl(file.url, file.name);
-                      }}
-                      className={`flex flex-row gap-2 p-1.5 bg-white rounded-2xl border border-black/5 transition-all group shadow-sm overflow-hidden relative items-start hover:scale-[1.02] active:scale-[0.98] ${
-                        isOutOfStock ? 'cursor-not-allowed opacity-70' : 'hover:bg-yellow-50 hover:border-yellow-200 cursor-pointer'
-                      }`}
-                    >
-                      {/* Out of Stock Overlay */}
-                      {isOutOfStock && (
-                        <div className="absolute inset-0 z-50 pointer-events-auto flex items-center justify-center bg-zinc-100/60 backdrop-grayscale cursor-not-allowed">
-                          <div className="w-[150%] h-[2px] bg-red-500/40 rotate-45 absolute" />
-                          <div className="w-[150%] h-[2px] bg-red-500/40 -rotate-45 absolute" />
-                          <div className="bg-zinc-800 text-white text-[8px] font-black uppercase tracking-[0.2em] px-3 py-1.5 rounded-lg shadow-2xl z-[60] border border-white/20">
-                            {t.outOfStock}
+                visibleFiles.length === 0 ? (
+                  <div className="text-[9px] text-zinc-400 font-bold text-center py-4 italic">{t.noAssetsFound}</div>
+                ) : (
+                  visibleFiles.map((file) => {
+                    const originalDisplayName = file.name.replace(/\.fbx$/i, '');
+                    const cleanFileName = originalDisplayName.replace(/_/g, ' ').replace(/-/g, ' ');
+                    const normalizedName = originalDisplayName.trim().toLowerCase();
+                    const translation = translatedModels[normalizedName];
+                    const displayName = translation?.name || apiTitles[normalizedName] || cleanFileName;
+                    
+                    const thumbnail = r2Textures.find(t => {
+                      const lowTex = t.name.toLowerCase();
+                      const lowModel = originalDisplayName.toLowerCase();
+                      return lowTex.startsWith(lowModel) && lowTex.includes('preview');
+                    }) || r2Textures.find(t => t.name.toLowerCase().startsWith(originalDisplayName.toLowerCase()));
+                    
+                    const isOutOfStock = inventory[normalizedName] === 0;
+                    const description = translation?.description || descriptions[normalizedName];
+                    
+                    return (
+                      <div 
+                        key={file.key}
+                        onMouseEnter={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setHoveredProduct({
+                            name: displayName,
+                            description: description || '',
+                            image: thumbnail?.url || null,
+                            inventory: inventory[normalizedName],
+                            rect
+                          });
+                        }}
+                        onMouseLeave={() => setHoveredProduct(null)}
+                        onClick={(e) => {
+                          if (isOutOfStock) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            return;
+                          }
+                          onAddFromUrl(file.url, file.name);
+                        }}
+                        className={`flex flex-row gap-2 p-1.5 bg-white rounded-2xl border border-black/5 transition-all group shadow-sm overflow-hidden relative items-start hover:scale-[1.02] active:scale-[0.98] ${
+                          isOutOfStock ? 'cursor-not-allowed opacity-70' : 'hover:bg-yellow-50 hover:border-yellow-200 cursor-pointer'
+                        }`}
+                      >
+                        {isOutOfStock && (
+                          <div className="absolute inset-0 z-50 pointer-events-auto flex items-center justify-center bg-zinc-100/60 backdrop-grayscale cursor-not-allowed">
+                            <div className="w-[150%] h-[2px] bg-red-500/40 rotate-45 absolute" />
+                            <div className="w-[150%] h-[2px] bg-red-500/40 -rotate-45 absolute" />
+                            <div className="bg-zinc-800 text-white text-[8px] font-black uppercase tracking-[0.2em] px-3 py-1.5 rounded-lg shadow-2xl z-[60] border border-white/20">
+                              {t.outOfStock}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="shrink-0">
+                          <div className="w-12 h-12 bg-zinc-50 rounded-xl relative overflow-hidden border border-black/5">
+                            {thumbnail ? (
+                              <img 
+                                src={thumbnail.url} 
+                                alt={displayName}
+                                className={`w-full h-full object-cover transition-transform duration-500 ${!isOutOfStock && 'group-hover:scale-110'}`}
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-zinc-50">
+                                <svg className="w-6 h-6 text-zinc-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                </svg>
+                              </div>
+                            )}
                           </div>
                         </div>
-                      )}
 
-                      {/* Preview Image - Side by side */}
-                      <div className="shrink-0">
-                        <div className="w-12 h-12 bg-zinc-50 rounded-xl relative overflow-hidden border border-black/5">
-                          {thumbnail ? (
-                            <img 
-                              src={thumbnail.url} 
-                              alt={displayName}
-                              className={`w-full h-full object-cover transition-transform duration-500 ${!isOutOfStock && 'group-hover:scale-110'}`}
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-zinc-50">
-                              <svg className="w-6 h-6 text-zinc-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                              </svg>
-                            </div>
+                        <div className="flex flex-col gap-1 min-w-0 flex-1">
+                          <span className={`text-[12px] font-black uppercase tracking-wider transition-colors leading-tight ${
+                            isOutOfStock ? 'text-zinc-400 line-through decoration-red-500/50 decoration-2' : 'text-zinc-800 group-hover:text-yellow-600'
+                          }`}>
+                            {displayName}
+                          </span>
+                          {description && (
+                            <p className="text-[11px] text-zinc-500 font-medium leading-relaxed line-clamp-3">
+                              {description}
+                            </p>
                           )}
                         </div>
                       </div>
-
-                      <div className="flex flex-col gap-1 min-w-0 flex-1">
-                        <span className={`text-[12px] font-black uppercase tracking-wider transition-colors leading-tight ${
-                          isOutOfStock ? 'text-zinc-400 line-through decoration-red-500/50 decoration-2' : 'text-zinc-800 group-hover:text-yellow-600'
-                        }`}>
-                          {displayName}
-                        </span>
-                        {description && (
-                          <p className="text-[11px] text-zinc-500 font-medium leading-relaxed line-clamp-3">
-                            {description}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
+                    );
+                  })
+                )
               ) : (
                 Object.entries(categories).map(([category, files]) => (
                   <div key={category} className="space-y-3">
@@ -498,9 +531,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                       <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
                         {files.map((file) => {
                           const originalDisplayName = file.name.replace(/\.fbx$/i, '');
+                          const cleanFileName = originalDisplayName.replace(/_/g, ' ').replace(/-/g, ' ');
                           const normalizedName = originalDisplayName.trim().toLowerCase();
                           const translation = translatedModels[normalizedName];
-                          const displayName = translation?.name || apiTitles[normalizedName] || originalDisplayName;
+                          const displayName = translation?.name || apiTitles[normalizedName] || cleanFileName;
 
                           // Prioritize textures that match the model name and contain "preview"
                           const thumbnail = r2Textures.find(t => {

@@ -217,7 +217,9 @@ const App: React.FC = () => {
       return;
     }
     const langName = language === 'he' ? 'Hebrew' : language === 'ar' ? 'Arabic' : language === 'ru' ? 'Russian' : 'English';
-    const displayTitle = productDetails?.originalTitle || selectedModel.name;
+    const originalDisplayName = selectedModel.name;
+    const cleanFileName = originalDisplayName.replace(/_/g, ' ').replace(/-/g, ' ');
+    const displayTitle = productDetails?.originalTitle || cleanFileName;
     if (langName === 'English') {
       setTranslatedSelectedModelName(displayTitle);
       return;
