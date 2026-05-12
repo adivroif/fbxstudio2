@@ -13,10 +13,11 @@ interface SidebarProps {
   onRemove: (id: string) => void;
   onAddFromUrl: (url: string, name: string) => void;
   language: Language;
+  isMobile?: boolean;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
-  models, selectedId, onSelect, onAddFile, onRemove, onAddFromUrl, language
+  models, selectedId, onSelect, onAddFile, onRemove, onAddFromUrl, language, isMobile = false
 }) => {
   const [r2Files, setR2Files] = React.useState<any[]>([]);
   const [r2Textures, setR2Textures] = React.useState<any[]>([]);
@@ -443,6 +444,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                       <div 
                         key={file.key}
                         onMouseEnter={(e) => {
+                          if (isMobile) return;
                           const rect = e.currentTarget.getBoundingClientRect();
                           setHoveredProduct({
                             name: displayName,
@@ -550,6 +552,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                             <div 
                               key={file.key}
                               onMouseEnter={(e) => {
+                                if (isMobile) return;
                                 const rect = e.currentTarget.getBoundingClientRect();
                                 setHoveredProduct({
                                   name: displayName,
