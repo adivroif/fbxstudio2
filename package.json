@@ -12,6 +12,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1004.0",
     "@aws-sdk/s3-request-presigner": "^3.1004.0",
+    "@google-cloud/translate": "^9.4.1",
     "@google/genai": "^1.38.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
