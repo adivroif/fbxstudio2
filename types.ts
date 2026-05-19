@@ -107,5 +107,5 @@ export interface ModelPart {
   partName: string;
   partKey: string;
   description: string;
-  linkTo?: string;
+  presentAtSite?: boolean;
 }

@@ -4,13 +4,58 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import * as dotenv from 'dotenv';
+
+// Load environment variables as early as possible
+dotenv.config();
 
 import { S3Client, ListObjectsV2Command, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { pipeline } from "stream/promises";
+import { GoogleGenAI, Modality, Type } from "@google/genai";
+import { v2 } from '@google-cloud/translate';
+
+const { Translate } = v2;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Initialize Gemini
+let aiInstance: GoogleGenAI | null = null;
+const getAI = () => {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn("⚠️ Warning: GEMINI_API_KEY or GEMINI_API_KEY1 is missing from environment. TTS will not work.");
+      return null;
+    }
+    console.log("Initializing Gemini AI with API Key from environment (" + (process.env.GEMINI_API_KEY1 ? "GEMINI_API_KEY1" : "GEMINI_API_KEY") + ")");
+    aiInstance = new GoogleGenAI({ 
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+  }
+  return aiInstance;
+};
+
+// Initialize Google Cloud Translate
+let translateClient: v2.Translate | null = null;
+const getTranslate = () => {
+  if (!translateClient) {
+    const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
+    if (!apiKey) {
+      console.warn("⚠️ Warning: GOOGLE_TRANSLATE_API_KEY is missing from environment. Translations will use fallback.");
+      return null;
+    }
+    console.log("Initializing Cloud Translate with API Key (first 5 chars):", apiKey.substring(0, 5) + "...");
+    translateClient = new Translate({ key: apiKey });
+  }
+  return translateClient;
+};
 
 // Initialize R2 Client (S3 compatible)
 const getR2Client = () => {
@@ -45,9 +90,13 @@ const validateR2Config = () => {
 };
 
 // Utility for fetching with a timeout
-async function fetchWithTimeout(url: string, options: any = {}, timeout = 10000) {
+async function fetchWithTimeout(url: string, options: any = {}, timeout = 30000) {
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
+  const id = setTimeout(() => {
+    console.warn(`Fetch to ${url} timed out after ${timeout}ms - Aborting`);
+    controller.abort();
+  }, timeout);
+  
   try {
     const response = await fetch(url, {
       ...options,
@@ -55,8 +104,11 @@ async function fetchWithTimeout(url: string, options: any = {}, timeout = 10000)
     });
     clearTimeout(id);
     return response;
-  } catch (error) {
+  } catch (error: any) {
     clearTimeout(id);
+    if (error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${timeout}ms`);
+    }
     throw error;
   }
 }
@@ -114,48 +166,59 @@ async function startServer() {
     const modelName = (req.params.productName || req.query.modelName) as string;
     if (!modelName) return res.status(400).json({ error: "modelName is required" });
 
-    // Use the provided Azure API URL structure
-    const azureApiUrl = `https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/ModelsParts/productName/${encodeURIComponent(modelName)}`;
+    const tryFetchParts = async (name: string) => {
+      // Clean name: remove extension and use strictly for the API call
+      const cleanName = name.replace(/\.[^/.]+$/, "");
+      const azureApiUrl = `https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/ModelsParts/productName/${encodeURIComponent(cleanName)}`;
+      
+      try {
+        console.log(`Strict Fetching model parts: ${azureApiUrl}`);
+        const response = await fetchWithTimeout(azureApiUrl, {}, 15000); // 15s timeout
+        
+        if (!response.ok) return null;
+
+        const text = await response.text();
+        if (!text || text.trim() === "") return null;
+        
+        try {
+          const data = JSON.parse(text);
+          // Standardize response to part objects
+          const rawParts = Array.isArray(data) ? data : (data.parts || data.data || data.items || []);
+          
+          if (rawParts.length === 0) return null;
+
+          return rawParts.map((item: any) => ({
+            id: (item.partId || item.PartId || Math.random().toString(36).substr(2, 9)).toString(),
+            modelName: name,
+            partName: item.displayName || item.display_name || item.partName || item.PartName || item.partKey || item.PartKey || "Unnamed Part",
+            partKey: item.partKey || item.PartKey || "",
+            description: item.description || item.Description || "",
+            presentAtSite: item.presentAtSite ?? item.PresentAtSite ?? true // Default to true if not provided by API
+          }));
+        } catch (jsonErr) {
+          console.error("Invalid JSON for parts:", jsonErr);
+          return null;
+        }
+      } catch (err) {
+        console.error(`Parts fetch failed for ${cleanName}:`, err);
+        return null;
+      }
+    };
 
     try {
-      console.log(`Fetching model parts from Azure API: ${azureApiUrl}`);
-      const response = await fetchWithTimeout(azureApiUrl, {}, 15000);
-      
-      if (!response.ok) {
-        throw new Error(`Azure API responded with status: ${response.status}`);
-      }
+      // Use strictly the modelName (usually the filename) for the parts lookup
+      const parts = await tryFetchParts(modelName);
 
-      const text = await response.text();
-      if (!text || text.trim() === "") throw new Error("Azure API returned an empty response");
-      
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (jsonErr) {
-        throw new Error("Azure API returned invalid JSON");
+      if (parts && parts.length > 0) {
+        return res.json(parts);
       }
       
-      // Map the Azure API response to our ModelPart interface
-      const parts = Array.isArray(data) ? data.map((item: any) => ({
-        id: (item.partId || item.PartId || Math.random().toString(36).substr(2, 9)).toString(),
-        modelName: modelName,
-        partName: item.displayName || item.display_name || item.partKey || item.PartKey || "",
-        partKey: item.partKey || item.PartKey || "",
-        description: item.description || item.Description || "",
-        linkTo: item.linkTo || item.LinkTo || ""
-      })) : [];
-
-      res.json(parts); // Send array directly as suggested by frontend update
+      // If no strict match found, return empty array (NO fallbacks/mocks)
+      console.warn(`No DB parts found for strictly matched model: ${modelName}`);
+      res.json([]);
     } catch (err: any) {
-      console.error("Azure API Error:", err);
-      
-      // Fallback to mock data if the API call fails or is not yet configured
-      console.warn("Falling back to mock data due to API error.");
-      const mockParts = [
-        { id: 'mock-1', modelName, partName: 'Axe_Head', partKey: 'HEAD-001', description: 'Heavy steel head, forged for maximum impact.' },
-        { id: 'mock-2', modelName, partName: 'Handle', partKey: 'HNDL-042', description: 'Ergonomic wooden handle with leather grip.' }
-      ];
-      res.json(mockParts);
+      console.error("Azure API Error (Global):", err);
+      res.status(500).json({ error: "Internal server error during parts fetch" });
     }
   });
 
@@ -169,7 +232,7 @@ async function startServer() {
 
     try {
       console.log(`Fetching inventory from Azure API: ${azureApiUrl}`);
-      const response = await fetchWithTimeout(azureApiUrl, {}, 15000);
+      const response = await fetchWithTimeout(azureApiUrl, {}, 45000);
       
       if (!response.ok) {
         throw new Error(`Azure API responded with status: ${response.status}`);
@@ -212,7 +275,7 @@ async function startServer() {
     const tryFetch = async (title: string) => {
       try {
         const url = `https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/Products/productTitle/${encodeURIComponent(title)}`;
-        const resp = await fetchWithTimeout(url, {}, 15000);
+        const resp = await fetchWithTimeout(url, {}, 45000);
         if (!resp.ok) return null;
         
         const text = await resp.text();
@@ -241,9 +304,6 @@ async function startServer() {
         modelName,
         modelName.replace(/_/g, ' '),         // My_Model -> My Model
         modelName.replace(/-/g, ' '),         // My-Model -> My Model
-        modelName.replace(/([a-z])([A-Z])/g, '$1 $2'), // CamelCase -> Camel Case
-        modelName.replace(/([A-Z][a-z]+)/g, ' $1').trim(), // CamelCase -> Camel Case (alt)
-        modelName.replace(/(\d+)/g, ' $1 ').trim().replace(/\s+/g, ' '), // Product123 -> Product 123
         modelName.charAt(0).toUpperCase() + modelName.slice(1), // camel -> Camel
         modelName.toLowerCase(),
         modelName.toUpperCase()
@@ -259,6 +319,11 @@ async function startServer() {
           console.log(`Matched product using variation: ${variant}`);
           break;
         }
+      }
+      
+      // Final fallback to "Connector" only if absolutely necessary and not already tried
+      if (!data && !uniqueVariations.includes("Connector")) {
+        data = await tryFetch("Connector");
       }
 
       if (data) {
@@ -279,8 +344,20 @@ async function startServer() {
 
     try {
       console.log(`Fetching categories from Azure API: ${azureApiUrl}`);
-      const response = await fetchWithTimeout(azureApiUrl, {}, 15000);
+      let response;
+      try {
+        response = await fetchWithTimeout(azureApiUrl, {}, 45000);
+      } catch (err) {
+        console.warn(`Initial categories fetch threw error, retrying...`, err);
+        response = await fetchWithTimeout(azureApiUrl, {}, 60000);
+      }
       
+      // Also retry if not ok but didn't throw
+      if (!response.ok) {
+        console.warn(`Initial categories fetch returned not-ok status, retrying...`);
+        response = await fetchWithTimeout(azureApiUrl, {}, 60000);
+      }
+
       if (!response.ok) {
         throw new Error(`Azure API responded with status: ${response.status}`);
       }
@@ -334,8 +411,20 @@ async function startServer() {
 
     try {
       console.log(`Fetching files from Azure API: ${azureApiUrl}`);
-      const response = await fetchWithTimeout(azureApiUrl, {}, 15000);
+      let response;
+      try {
+        response = await fetchWithTimeout(azureApiUrl, {}, 45000);
+      } catch (err) {
+        console.warn(`Initial files fetch threw error, retrying...`, err);
+        response = await fetchWithTimeout(azureApiUrl, {}, 60000);
+      }
       
+      // Also retry if not ok but didn't throw
+      if (!response.ok) {
+        console.warn(`Initial files fetch returned not-ok status, retrying...`);
+        response = await fetchWithTimeout(azureApiUrl, {}, 60000);
+      }
+
       if (!response.ok) {
         throw new Error(`Azure API responded with status: ${response.status}`);
       }
@@ -396,7 +485,7 @@ async function startServer() {
 
     try {
       console.log(`Fetching image list from Azure for model filtering: ${azureApiUrl}`);
-      const response = await fetchWithTimeout(azureApiUrl, {}, 15000);
+      const response = await fetchWithTimeout(azureApiUrl, {}, 45000);
       
       if (!response.ok) {
         throw new Error(`Azure API responded with status: ${response.status}`);
@@ -476,7 +565,7 @@ async function startServer() {
 
     try {
       console.log(`Proxying Azure file: ${azureFileUrl}`);
-      const response = await fetchWithTimeout(azureFileUrl, {}, 30000);
+      const response = await fetchWithTimeout(azureFileUrl, {}, 60000);
       
       if (!response.ok) {
         return res.status(response.status).send(`Azure responded with ${response.status}`);
@@ -514,6 +603,204 @@ async function startServer() {
     } catch (err: any) {
       console.error("Azure File Proxy Error:", err);
       res.status(500).send(`Failed to proxy file from Azure: ${err.message}`);
+    }
+  });
+
+  // API Route for translation
+  app.post("/api/ai/translate", async (req, res) => {
+    const { texts, targetLanguage } = req.body;
+    if (!texts || !Array.isArray(texts)) return res.status(400).json({ error: "texts array is required" });
+    if (!targetLanguage) return res.status(400).json({ error: "targetLanguage is required" });
+
+    const translate = getTranslate();
+    const ai = getAI();
+    
+    // Map common language names to ISO codes if necessary
+    let langCode = targetLanguage;
+    const langMap: { [key: string]: string } = {
+      'hebrew': 'he',
+      'he': 'he',
+      'iw': 'he', // Old code for Hebrew
+      'english': 'en',
+      'en': 'en',
+      'russian': 'ru',
+      'ru': 'ru',
+      'french': 'fr',
+      'fr': 'fr',
+      'spanish': 'es',
+      'es': 'es',
+      'arabic': 'ar',
+      'ar': 'ar',
+      'deutsch': 'de',
+      'german': 'de',
+      'de': 'de',
+      'it': 'it',
+      'italian': 'it'
+    };
+    
+    const lowerLang = targetLanguage.toString().toLowerCase().trim();
+    if (langMap[lowerLang]) {
+      langCode = langMap[lowerLang];
+    } else if (lowerLang.length > 2 && !lowerLang.includes('-')) {
+      // If it's a long name not in map, default to something or try to use it as-is (might fail)
+      console.warn(`Unknown language name: ${targetLanguage}, using as-is.`);
+    } else if (lowerLang.includes('-')) {
+      // Handle codes like he-IL -> he
+      langCode = lowerLang.split('-')[0];
+    }
+
+    // Filter out invalid items to prevent API errors
+    const uniqueTextsMap = new Map<string, number[]>();
+    texts.forEach((t, i) => {
+      const cleaned = (t === null || t === undefined) ? "" : String(t).trim();
+      if (cleaned.length > 0) {
+        if (!uniqueTextsMap.has(cleaned)) {
+          uniqueTextsMap.set(cleaned, []);
+        }
+        uniqueTextsMap.get(cleaned)!.push(i);
+      }
+    });
+
+    const uniqueValidTexts = Array.from(uniqueTextsMap.keys());
+    
+    if (uniqueValidTexts.length === 0) {
+      console.log("No valid texts to translate, returning originals.");
+      return res.json({ translated: texts });
+    }
+
+    // Primary: Attempt Gemini first as it's a major capability of this environment and more robust
+    if (ai) {
+      try {
+        console.log(`Using Gemini for translation to ${targetLanguage} (${uniqueValidTexts.length} unique items)...`);
+        const prompt = `Translate the following list of strings to ${targetLanguage}. 
+Return ONLY a valid JSON array of strings in the exact same order.
+If you cannot translate a string, return the original text.
+
+List to translate:
+${JSON.stringify(uniqueValidTexts)}`;
+
+        const result = await ai.models.generateContent({
+          model: "gemini-3.1-flash-lite",
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING }
+            }
+          }
+        });
+
+        let translatedUnique: string[] = [];
+        try {
+          translatedUnique = JSON.parse(result.text || "[]");
+        } catch (e) {
+          console.error("Gemini returned invalid JSON for translation.");
+        }
+        
+        if (translatedUnique.length === uniqueValidTexts.length) {
+          const finalResults = new Array(texts.length).fill("");
+          // Fill original texts for everything first
+          texts.forEach((t, i) => finalResults[i] = t);
+          
+          // Map translated unique back to original indices
+          uniqueValidTexts.forEach((originalText, uniqueIdx) => {
+            const indices = uniqueTextsMap.get(originalText) || [];
+            indices.forEach(originalIdx => {
+              finalResults[originalIdx] = translatedUnique[uniqueIdx];
+            });
+          });
+          
+          return res.json({ translated: finalResults });
+        } else {
+          console.warn(`Gemini returned ${translatedUnique.length} items but expected ${uniqueValidTexts.length}. Falling back to secondary methods.`);
+        }
+      } catch (geminiErr: any) {
+        console.warn("Gemini translation attempt failed, checking for secondary methods:", geminiErr.message || geminiErr);
+      }
+    }
+
+    // Secondary: Attempt Cloud Translation if Gemini failed or is unavailable
+    if (translate) {
+      try {
+        console.log(`Attempting Cloud Translation as fallback for ${uniqueValidTexts.length} unique items to codes='${langCode}'...`);
+        
+        const BATCH_SIZE = 50;
+        const translatedResults: string[] = [];
+        
+        for (let i = 0; i < uniqueValidTexts.length; i += BATCH_SIZE) {
+          const batch = uniqueValidTexts.slice(i, i + BATCH_SIZE);
+          const [translations] = await translate.translate(batch, langCode);
+          const results = Array.isArray(translations) ? translations : [translations];
+          translatedResults.push(...results);
+        }
+        
+        if (translatedResults.length === uniqueValidTexts.length) {
+          const finalResults = new Array(texts.length).fill("");
+          texts.forEach((t, i) => finalResults[i] = t);
+          
+          uniqueValidTexts.forEach((originalText, uniqueIdx) => {
+            const indices = uniqueTextsMap.get(originalText) || [];
+            indices.forEach(originalIdx => {
+              finalResults[originalIdx] = translatedResults[uniqueIdx];
+            });
+          });
+          
+          return res.json({ translated: finalResults });
+        }
+      } catch (err: any) {
+        if (err.message?.includes('blocked') || err.code === 403) {
+          console.warn("Cloud Translation API is blocked or restricted. Using ultimate fallback.");
+        } else {
+          console.error("Cloud Translation API Error details:", err);
+        }
+      }
+    }
+
+    // Ultimate fallback: return originals
+    console.warn("All translation methods failed or were unavailable. Returning original texts.");
+    res.json({ translated: texts });
+  });
+
+  // API Route for TTS
+  app.post("/api/ai/tts", async (req, res) => {
+    const { text, langCode } = req.body;
+    if (!text) return res.status(400).json({ error: "text is required" });
+
+    const ai = getAI();
+    if (!ai) return res.status(500).json({ error: "Gemini API not configured" });
+
+    try {
+      const hint = langCode === 'he' ? `Speak this Hebrew text clearly: ${text}` : 
+                 langCode === 'ar' ? `Speak this Arabic text clearly: ${text}` : text;
+
+      const modelName = "gemini-3.1-flash-tts-preview";
+      const result = await ai.models.generateContent({
+        model: modelName,
+        contents: [{ role: "user", parts: [{ text: hint }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: 'Kore' 
+              },
+            },
+          },
+        },
+      });
+
+      const audioBase64 = result.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+
+      if (audioBase64) {
+        res.json({ audio: audioBase64 });
+      } else {
+        console.error("No audio content in Gemini 3.1 response:", JSON.stringify(result).substring(0, 500));
+        res.status(500).json({ error: "No audio generated", details: "Response did not contain audio data" });
+      }
+    } catch (err: any) {
+      console.error("TTS API Error:", err);
+      res.status(500).json({ error: "TTS failed", detail: err.message });
     }
   });
 

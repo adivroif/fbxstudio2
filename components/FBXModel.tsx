@@ -373,38 +373,72 @@ const FBXModel: React.FC<FBXModelProps> = ({
 
         // ── 12. Transparency ───────────────────────────────────────────────
         const isTransparent = !!mat.alphaMap || settings.opacity < 1.0 || !!mat.userData.originalTransparent;
+        
         mat.transparent = isTransparent;
         mat.opacity = settings.opacity;
 
         if (isTransparent) {
           const pn = mesh.name.toLowerCase();
-          const isInner = ['inner','rod','core','shaft','inside'].some(k => pn.includes(k));
-          const isShell = !isInner && ['shell','glass','case','enclosure','housing','cover','outer','tube','pipe','cylinder','body'].some(k => pn.includes(k));
+          const isInner = ['inner','rod','core','shaft','inside','piston','valve','internal','component','mechanism','heart','center','hidden','contained','inner_','inside_','solid','mass','axle','hub','engine','motor'].some(k => pn.includes(k));
+          const isShell = !isInner && ['glass','case','enclosure','housing','outer','envelope','window','transparent','translucent','acrylic','plexiglass','lens_'].some(k => pn.includes(k));
+          
+          // Use a small alphaTest for textured transparency (like leaves or grilles)
+          if (mat.alphaMap) mat.alphaTest = 0.1;
+
+          // Stable transparency sorting
+          mat.depthWrite = settings.opacity > 0.92; // Keep depth for near-opaque
+          mesh.frustumCulled = false; 
+          
           if (isShell) {
-            mat.depthWrite = false; mat.side = THREE.FrontSide; mat.alphaTest = 0; mesh.renderOrder = 1001;
+            mat.side = THREE.FrontSide;
+            mesh.renderOrder = 5000; 
+            
             if (!mesh.userData.backFaceMesh) {
-              const bMat = mat.clone(); bMat.side = THREE.BackSide; bMat.depthWrite = false;
+              const bMat = mat.clone();
+              bMat.side = THREE.BackSide;
+              bMat.depthWrite = false;
+              bMat.transparent = true;
               const bMesh = new THREE.Mesh(mesh.geometry, bMat);
-              bMesh.renderOrder = 1000; bMesh.name = `${mesh.name}_BackPass`;
-              bMesh.position.set(0,0,0); bMesh.rotation.set(0,0,0); bMesh.scale.set(1,1,1);
-              mesh.add(bMesh); mesh.userData.backFaceMesh = bMesh; mesh.userData.backFaceMat = bMat;
+              bMesh.frustumCulled = false;
+              bMesh.renderOrder = 4000; 
+              mesh.add(bMesh);
+              mesh.userData.backFaceMesh = bMesh;
+              mesh.userData.backFaceMat = bMat;
             } else {
               const bMat = mesh.userData.backFaceMat as THREE.MeshStandardMaterial;
-              bMat.opacity = mat.opacity; bMat.color.copy(mat.color); bMat.map = mat.map;
-              bMat.roughness = mat.roughness; bMat.metalness = mat.metalness;
-              bMat.emissive.copy(mat.emissive); bMat.emissiveIntensity = mat.emissiveIntensity; bMat.transparent = mat.transparent;
+              const bMesh = mesh.userData.backFaceMesh as THREE.Mesh;
+              bMat.color.copy(mat.color);
+              bMat.opacity = mat.opacity * 0.5; // Slightly dimmer backface
+              bMat.side = THREE.BackSide;
+              bMat.depthWrite = false;
+              bMat.transparent = true;
+              bMesh.renderOrder = 4000;
+              bMat.needsUpdate = true;
             }
           } else {
-            mat.depthWrite = true; mat.side = THREE.DoubleSide; mat.alphaTest = 0.05;
-            mesh.renderOrder = isInner ? 100 : 50;
-            if (mesh.userData.backFaceMesh) { mesh.remove(mesh.userData.backFaceMesh); delete mesh.userData.backFaceMesh; delete mesh.userData.backFaceMat; }
+            mat.side = THREE.DoubleSide;
+            mesh.renderOrder = isInner ? 1000 : 2000; 
+            if (mesh.userData.backFaceMesh) {
+              mesh.remove(mesh.userData.backFaceMesh);
+              delete mesh.userData.backFaceMesh;
+              delete mesh.userData.backFaceMat;
+            }
           }
         } else {
-          mat.transparent = false; mat.depthWrite = true; mat.alphaTest = 0; mat.side = THREE.DoubleSide; mesh.renderOrder = 0;
-          if (mesh.userData.backFaceMesh) { mesh.remove(mesh.userData.backFaceMesh); delete mesh.userData.backFaceMesh; delete mesh.userData.backFaceMat; }
+          mat.transparent = false;
+          mat.depthWrite = true;
+          mat.side = THREE.DoubleSide;
+          mesh.renderOrder = 0; 
+          mesh.frustumCulled = false; 
+          if (mesh.userData.backFaceMesh) {
+            mesh.remove(mesh.userData.backFaceMesh);
+            delete mesh.userData.backFaceMesh;
+            delete mesh.userData.backFaceMat;
+          }
         }
 
-        mat.depthTest = true; mat.polygonOffset = false;
+        mat.depthTest = true; 
+        mat.needsUpdate = true;
 
         // ── 13. Global tint & hover ────────────────────────────────────────
         if (settings.color !== '#ffffff') mat.color.set(settings.color);
@@ -414,26 +448,30 @@ const FBXModel: React.FC<FBXModelProps> = ({
           if (!activePartId && !hoveredPartId) return false;
           
           const targetId = hoveredPartId || activePartId;
+          const targetLower = targetId.toLowerCase().trim();
+          const meshNameLower = mesh.name.toLowerCase().trim();
           
-          // 1. Try finding by semantic part ID
-          const part = modelParts.find(p => p.id === targetId);
-          if (part) {
-            return mesh.name.toLowerCase().trim() === part.partName.toLowerCase().trim() ||
-                   mesh.name.toLowerCase().trim().includes(part.partName.toLowerCase().trim());
+          // 1. DIRECT NAME MATCH (Most common for hover via name/key)
+          if (meshNameLower === targetLower || meshNameLower.includes(targetLower)) return true;
+          
+          // 2. SEMANTIC MATCH (Via part ID)
+          const partById = modelParts.find(p => p.id === targetId);
+          if (partById) {
+            const pName = partById.partName.toLowerCase().trim();
+            const pKey = (partById.partKey || "").toLowerCase().trim();
+            return meshNameLower === pName || meshNameLower.includes(pName) || 
+                   (pKey && (meshNameLower === pKey || meshNameLower.includes(pKey)));
           }
           
-          // 2. Try match by material name (used for fallback detected materials)
+          // 3. Fallback to material name match
           if (mat.name === targetId) return true;
-
-          // 3. Try match by mesh name
-          if (mesh.name === targetId) return true;
 
           return false;
         })();
 
         if (isPartHighlighted || settings.hoveredMaterial === mat.name) {
-          mat.emissive.setHex(0x3b82f6); // Using a vibrant blue (Tailwind blue-500)
-          mat.emissiveIntensity = 1.0;
+          mat.emissive.setHex(0xeab308); // Yellow (Tailwind yellow-500)
+          mat.emissiveIntensity = 0.8;
         }
         else {
           mat.emissive.setHex(0x000000);
@@ -504,8 +542,10 @@ const FBXModel: React.FC<FBXModelProps> = ({
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh;
         const partInfo = modelParts.find(p =>
-          p.partName.toLowerCase().trim() === mesh.name.toLowerCase().trim() ||
-          mesh.name.toLowerCase().trim().includes(p.partName.toLowerCase().trim())
+          (p.presentAtSite !== false) && (
+            p.partName.toLowerCase().trim() === mesh.name.toLowerCase().trim() ||
+            mesh.name.toLowerCase().trim().includes(p.partName.toLowerCase().trim())
+          )
         );
         if (partInfo?.description) {
           const tr = translatedParts[partInfo.id];
@@ -585,7 +625,7 @@ const FBXModel: React.FC<FBXModelProps> = ({
                   }
                 }}
                 className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full border-2 border-white shadow-2xl transition-all duration-300 transform hover:scale-110 ${
-                  activePartId === hs.id ? 'bg-blue-600 ring-[8px] ring-blue-600/30 scale-110' : 'bg-blue-500'
+                  activePartId === hs.id ? 'bg-yellow-500 ring-[8px] ring-yellow-500/30 scale-110' : 'bg-yellow-600'
                 }`}
               />
             </div>

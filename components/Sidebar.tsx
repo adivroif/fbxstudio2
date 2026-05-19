@@ -14,10 +14,13 @@ interface SidebarProps {
   onAddFromUrl: (url: string, name: string) => void;
   language: Language;
   isMobile?: boolean;
+  catalogFiles: any[];
+  isLoadingCatalog: boolean;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
-  models, selectedId, onSelect, onAddFile, onRemove, onAddFromUrl, language, isMobile = false
+  models, selectedId, onSelect, onAddFile, onRemove, onAddFromUrl, language, isMobile = false,
+  catalogFiles, isLoadingCatalog
 }) => {
   const [r2Files, setR2Files] = React.useState<any[]>([]);
   const [r2Textures, setR2Textures] = React.useState<any[]>([]);
@@ -143,20 +146,11 @@ const Sidebar: React.FC<SidebarProps> = ({
     setIsLoadingR2(true);
     setR2Error(null);
     try {
-      console.log("Fetching catalog from Azure...");
-      // Fetch models and textures in parallel from their respective folders
-      const [modelsRes, texturesRes] = await Promise.all([
-        fetch('/api/files/get-files?folder=tenants&clientName=tenantB'),
-        fetch('/api/files/get-files?folder=images&clientName=tenantB')
-      ]);
-      
-      const rawModelsData = modelsRes.ok ? await modelsRes.json() : [];
+      console.log("Fetching textures catalog from Azure...");
+      // We only need to fetch textures here, models come from props
+      const texturesRes = await fetch('/api/files/get-files?folder=images&clientName=tenantB');
       const rawTexturesData = texturesRes.ok ? await texturesRes.json() : [];
       
-      console.log("RAW MODELS DATA:", rawModelsData);
-      console.log("RAW TEXTURES DATA:", rawTexturesData);
-      
-      // Helper to find list in various response formats
       const getListData = (raw: any) => {
         if (Array.isArray(raw)) return raw;
         if (raw && typeof raw === 'object') {
@@ -165,78 +159,39 @@ const Sidebar: React.FC<SidebarProps> = ({
         return [];
       };
 
-      const modelsData = getListData(rawModelsData);
       const texturesData = getListData(rawTexturesData);
       
-      // Helper to extract values from items with various property names
-      const extractItem = (item: any, sourceFolder: string, forceType?: 'fbx' | 'texture') => {
+      const extractItem = (item: any, sourceFolder: string) => {
         if (typeof item === 'string') return { key: item, name: item, url: item };
-        
         const name = item.fileName || item.FileName || item.filename || item.Name || item.name || item.Title || item.title || "";
         const key = item.fullPath || item.FullPath || item.fullpath || item.Key || item.item_key || item.key || item.FilePath || name || "";
-        
-        const isFbx = forceType === 'fbx' || name.toLowerCase().endsWith('.fbx');
-        const clientName = "tenantB";
-
-        // Logic based on user request:
-        // FBX -> get-files
-        // Textures -> get-file
-        let url = "";
-        if (isFbx) {
-          url = `/api/files/get-file?folder=${encodeURIComponent(sourceFolder)}&clientName=${clientName}&fileName=${encodeURIComponent(name)}`;
-        } else {
-          url = `/api/files/get-file?folder=${encodeURIComponent(sourceFolder)}&clientName=${clientName}&fileName=${encodeURIComponent(name)}`;
-        }
-        
+        const url = `/api/files/get-file?folder=${encodeURIComponent(sourceFolder)}&clientName=tenantB&fileName=${encodeURIComponent(name)}`;
         return { key, name, url };
       };
-
-      if (modelsData && modelsData.length > 0) {
-        const files = modelsData
-          .map(item => extractItem(item, 'tenants', 'fbx'))
-          .filter(f => f.name.toLowerCase().endsWith(".fbx") || f.key.toLowerCase().endsWith(".fbx"));
-          
-        console.log("PARSED MODELS:", files);
-        setR2Files(files);
-      } else {
-        console.warn("No models found in Azure response");
-      }
 
       if (texturesData && texturesData.length > 0) {
         const imageExtensions = [".png", ".jpg", ".jpeg", ".webp", ".tga", ".dds", ".gif", ".bmp"];
         const textures = texturesData
-          .map(item => extractItem(item, 'images', 'texture'))
+          .map(item => extractItem(item, 'images'))
           .filter(f => {
             const name = f.name.toLowerCase();
             return imageExtensions.some(ext => name.endsWith(ext));
           });
           
-        console.log("PARSED TEXTURES:", textures);
         setR2Textures(textures);
-      } else {
-        console.warn("No textures found in Azure response, checking fallback R2");
-        // Fallback to fetch textures from R2 if no images found in the images folder
-        try {
-          const r2TexturesRes = await fetch('/api/r2/textures');
-          if (r2TexturesRes.ok) {
-            const r2TexturesData = await r2TexturesRes.json();
-            if (r2TexturesData.textures) {
-              setR2Textures(r2TexturesData.textures);
-            }
-          }
-        } catch (texErr) {
-          console.error("Failed to fetch fallback R2 textures:", texErr);
-        }
       }
     } catch (err) {
-      console.error("Catalog Fetch Error:", err);
-      setR2Error('Failed to fetch product catalog');
+      console.error("Catalog Texture Fetch Error:", err);
     } finally {
       setIsLoadingR2(false);
     }
   };
 
-  const fetchR2Files = fetchCatalogFiles; // Keep the name for compatibility with existing code
+  const fetchR2Files = fetchCatalogFiles;
+
+  React.useEffect(() => {
+    setR2Files(catalogFiles);
+  }, [catalogFiles]);
 
   React.useEffect(() => {
     fetchR2Files();
@@ -306,7 +261,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     };
 
     translateModelInfo();
-  }, [language, r2Files, descriptions]);
+  }, [language, r2Files, descriptions, apiTitles]);
 
   const visibleFiles = React.useMemo(() => {
     return r2Files.filter(file => {
@@ -636,9 +591,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           className="fixed z-[9999] pointer-events-none transition-all duration-300 animate-in fade-in zoom-in-95"
           style={{
             top: Math.min(hoveredProduct.rect.top, window.innerHeight - 400),
-            left: isRTL 
-              ? hoveredProduct.rect.left + hoveredProduct.rect.width + 10
-              : hoveredProduct.rect.left - 310, 
+            left: hoveredProduct.rect.left - 310, 
             width: '300px',
           }}
         >
