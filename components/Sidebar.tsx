@@ -35,6 +35,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [displayStatus, setDisplayStatus] = React.useState<Record<string, boolean>>({});
   const [productToCategory, setProductToCategory] = React.useState<Record<string, string>>({});
   const [translatedModels, setTranslatedModels] = React.useState<Record<string, { name: string, description: string }>>({});
+  const [translatedCategories, setTranslatedCategories] = React.useState<Record<string, string>>({});
 
   const [hoveredProduct, setHoveredProduct] = React.useState<{
     name: string;
@@ -315,16 +316,45 @@ const Sidebar: React.FC<SidebarProps> = ({
       groups[category].push(file);
     });
 
-    // Ensure all API categories are present even if empty (optional, but requested for better UI)
-    apiCategories.forEach(c => {
-      const name = c.categoryName || c.name || c.title;
-      if (name && !groups[name]) {
-        groups[name] = [];
+    // Only return categories that actually contain products (filter out empty/administrative categories like Tenants or Products)
+    const filteredGroups: Record<string, any[]> = {};
+    Object.entries(groups).forEach(([cat, files]) => {
+      if (files.length > 0) {
+        filteredGroups[cat] = files;
       }
     });
 
-    return groups;
+    return filteredGroups;
   }, [visibleFiles, productToCategory, apiCategories]);
+
+  React.useEffect(() => {
+    const langName = language === 'he' ? 'Hebrew' : language === 'ar' ? 'Arabic' : language === 'ru' ? 'Russian' : 'English';
+    
+    if (langName === 'English') {
+      setTranslatedCategories({});
+      return;
+    }
+
+    const uniqueCategories = Object.keys(categories);
+    if (uniqueCategories.length === 0) return;
+
+    const translateCats = async () => {
+      try {
+        const { translateBatch } = await import('../services/ttsService');
+        const translatedResults = await translateBatch(uniqueCategories, langName);
+        
+        const newTranslations: Record<string, string> = {};
+        uniqueCategories.forEach((cat, idx) => {
+          newTranslations[cat] = translatedResults[idx] || cat;
+        });
+        setTranslatedCategories(newTranslations);
+      } catch (err) {
+        console.error("Failed to translate categories:", err);
+      }
+    };
+
+    translateCats();
+  }, [language, categories]);
 
   const selectedModel = models.find(m => m.id === selectedId);
 
@@ -476,7 +506,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     >
                       <div className="flex items-center gap-2">
                         <div className="w-1.5 h-1.5 bg-zinc-400 rounded-full group-hover:bg-yellow-500 transition-colors"></div>
-                        <span className="text-[10px] font-black uppercase tracking-widest text-zinc-600">{category}</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-zinc-600">{translatedCategories[category] || category}</span>
                         <span className="text-[9px] font-mono text-zinc-400">({files.length})</span>
                       </div>
                       <svg className={`w-3 h-3 text-zinc-400 transition-transform ${expandedCategory === category ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
