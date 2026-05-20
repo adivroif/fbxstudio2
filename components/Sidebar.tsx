@@ -218,11 +218,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   React.useEffect(() => {
     const langName = language === 'he' ? 'Hebrew' : language === 'ar' ? 'Arabic' : language === 'ru' ? 'Russian' : 'English';
     
-    if (langName === 'English') {
-      setTranslatedModels({});
-      return;
-    }
-
     const translateModelInfo = async () => {
       const filesToTranslate = [...r2Files];
       if (filesToTranslate.length === 0) return;
@@ -330,11 +325,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   React.useEffect(() => {
     const langName = language === 'he' ? 'Hebrew' : language === 'ar' ? 'Arabic' : language === 'ru' ? 'Russian' : 'English';
     
-    if (langName === 'English') {
-      setTranslatedCategories({});
-      return;
-    }
-
     const uniqueCategories = Object.keys(categories);
     if (uniqueCategories.length === 0) return;
 

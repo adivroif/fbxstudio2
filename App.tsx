@@ -68,6 +68,7 @@ const App: React.FC = () => {
   const [productTitles, setProductTitles] = useState<Record<string, string>>({});
   const [translatedSelectedModelName, setTranslatedSelectedModelName] = useState<string>('');
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+  const t = translations[language];
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -89,7 +90,7 @@ const App: React.FC = () => {
         try {
           const folder = 'images';
           const modelName = model.name;
-          const clientName = 'tenantB';
+          const clientName = 'tenantBד';
           const response = await fetch(`/api/files/get-images-by-model?folder=${encodeURIComponent(folder)}&modelName=${encodeURIComponent(modelName)}&clientName=${clientName}`);
           if (!response.ok) {
             fetchingModels.current.delete(model.id);
@@ -387,10 +388,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const langName = language === 'he' ? 'Hebrew' : language === 'ar' ? 'Arabic' : language === 'ru' ? 'Russian' : 'English';
-    if (langName === 'English') {
-      setTranslatedParts({});
-      return;
-    }
     
     if (modelParts.length > 0) {
       const translateAllParts = async () => {
@@ -498,19 +495,21 @@ const App: React.FC = () => {
       });
 
       // 3. Speak the description in the background (and translate it)
-      const translated = await speakText(part.description, language);
-      
-      // 4. Update UI state with translated text once ready
-      if (translated) {
-        // Also update the translatedParts cache if it wasn't there
-        if (!currentTranslation) {
-           setTranslatedParts(prev => ({
-             ...prev,
-             [part.id]: { ...prev[part.id], description: translated }
-           }));
+      // Use existing translation if available to skip redundant network calls inside speakText
+      const descToSpeak = currentTranslation?.description || part.description;
+      speakText(descToSpeak, language).then(translated => {
+        // 4. Update UI state with translated text once ready
+        if (translated) {
+          // Also update the translatedParts cache if it wasn't there
+          if (!currentTranslation) {
+             setTranslatedParts(prev => ({
+               ...prev,
+               [part.id]: { ...prev[part.id], description: translated }
+             }));
+          }
+          setActivePart(prev => prev?.id === part.id ? { ...prev, description: translated } : prev);
         }
-        setActivePart(prev => prev?.id === part.id ? { ...prev, description: translated } : prev);
-      }
+      });
     } else {
       setActivePart(null);
       if (selectedId) updateModelSettings(selectedId, { targetPartId: undefined });
@@ -909,7 +908,6 @@ const App: React.FC = () => {
     if (selectedId === id) setSelectedId(null);
   };
 
-  const t = translations[language];
   const isRTL = language === 'he' || language === 'ar';
 
   const handleTextureUpload = useCallback(async (file: File, type: string, matName?: string) => {
@@ -1456,11 +1454,15 @@ const App: React.FC = () => {
                                         return;
                                       }
                                       
-                                      // Tell the 3D model to focus on this part
-                                      if (selectedId) {
-                                        updateModelSettings(selectedId, { targetPartId: part.id });
-                                      }
-                                      
+                                      const p = {
+                                        id: part.id,
+                                        name: translatedParts[part.id]?.name || part.partName,
+                                        description: translatedParts[part.id]?.description || part.description,
+                                        position: new THREE.Vector3(),
+                                        size: new THREE.Vector3(),
+                                        mesh: undefined as any
+                                      };
+                                      handlePartClick(p);
                                       if (match) {
                                         handleAddFromUrl(match.url, match.name);
                                       }
