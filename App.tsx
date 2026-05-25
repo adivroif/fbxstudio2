@@ -1,5 +1,6 @@
 
 import React, { useState, Suspense, useCallback, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Environment, Float, Html, Center } from '@react-three/drei';
 import * as THREE from 'three';
@@ -48,6 +49,7 @@ const CameraHandler: React.FC<{
 const App: React.FC = () => {
   const [models, setModels] = useState<SceneModelInstance[]>([]);
   const [catalogFiles, setCatalogFiles] = useState<any[]>([]);
+  const [catalogTextures, setCatalogTextures] = useState<any[]>([]);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isMoveMode, setIsMoveMode] = useState(false);
@@ -90,7 +92,7 @@ const App: React.FC = () => {
         try {
           const folder = 'images';
           const modelName = model.name;
-          const clientName = 'tenantBד';
+          const clientName = 'tenantB';
           const response = await fetch(`/api/files/get-images-by-model?folder=${encodeURIComponent(folder)}&modelName=${encodeURIComponent(modelName)}&clientName=${clientName}`);
           if (!response.ok) {
             fetchingModels.current.delete(model.id);
@@ -161,6 +163,39 @@ const App: React.FC = () => {
       }
     };
     fetchCatalog();
+  }, []);
+
+  useEffect(() => {
+    const fetchTextures = async () => {
+      try {
+        const response = await fetch('/api/files/get-files?folder=images&clientName=tenantB');
+        if (response.ok) {
+          const raw = await response.json();
+          const getListData = (r: any) => {
+            if (Array.isArray(r)) return r;
+            if (r && typeof r === 'object') {
+              return r.files || r.items || r.data || r.images || r.models || Object.values(r).find(v => Array.isArray(v)) || [];
+            }
+            return [];
+          };
+          const list = getListData(raw);
+          const imageExtensions = [".png", ".jpg", ".jpeg", ".webp", ".tga", ".dds", ".gif", ".bmp"];
+          const extracted = list.map((item: any) => {
+            const name = item.fileName || item.FileName || item.filename || item.Name || item.name || item.Title || item.title || "";
+            const key = item.fullPath || item.FullPath || item.fullpath || item.Key || item.item_key || item.key || item.FilePath || name || "";
+            const url = `/api/files/get-file?folder=images&clientName=tenantB&fileName=${encodeURIComponent(name)}`;
+            return { key, name, url };
+          }).filter((f: any) => {
+            const lowName = f.name.toLowerCase();
+            return imageExtensions.some(ext => lowName.endsWith(ext));
+          });
+          setCatalogTextures(extracted);
+        }
+      } catch (err) {
+        console.error("Failed to fetch textures in App:", err);
+      }
+    };
+    fetchTextures();
   }, []);
 
   useEffect(() => {
@@ -279,6 +314,12 @@ const App: React.FC = () => {
   const [modelParts, setModelParts] = useState<ModelPart[]>([]);
   const [isFetchingParts, setIsFetchingParts] = useState(false);
   const [hoveredPartId, setHoveredPartId] = useState<string | null>(null);
+  const [hoveredPartTooltip, setHoveredPartTooltip] = useState<{
+    name: string;
+    description: string;
+    image: string | null;
+    rect: DOMRect;
+  } | null>(null);
   const [translatedParts, setTranslatedParts] = useState<Record<string, { name: string, description: string }>>({});
   const [activePart, setActivePart] = useState<{ id: string, name: string, description: string, position?: THREE.Vector3, size?: THREE.Vector3, mesh?: THREE.Mesh } | null>(null);
 
@@ -1314,11 +1355,11 @@ const App: React.FC = () => {
 
         {/* PRODUCT INFO TAB - LEFT SIDE */}
         {selectedModel && (
-          <div className="absolute left-0 top-[60%] -translate-y-1/2 z-[110] flex items-center pointer-events-none">
+          <div className="absolute left-0 top-[50%] sm:top-[55%] -translate-y-1/2 z-[110] flex items-center pointer-events-none">
             <button
               onClick={() => setIsProductInfoOpen(!isProductInfoOpen)}
               className={`group relative flex items-center justify-center w-8 h-20 sm:w-12 sm:h-28 bg-white/95 backdrop-blur-xl border border-black/10 shadow-2xl transition-all duration-500 pointer-events-auto opacity-100 visible ${
-                isProductInfoOpen ? 'translate-x-[280px] sm:translate-x-[320px]' : 'translate-x-0'
+                isProductInfoOpen ? 'translate-x-[280px] sm:translate-x-[320px] lg:translate-x-[380px]' : 'translate-x-0'
               }`}
               style={{
                 clipPath: 'polygon(0% 0%, 100% 50%, 0% 100%)',
@@ -1342,7 +1383,7 @@ const App: React.FC = () => {
 
             {/* PRODUCT INFO PANEL */}
             <div 
-              className={`absolute top-1/2 -translate-y-1/2 left-0 w-[280px] sm:w-[320px] h-[70vh] backdrop-blur-3xl shadow-[25px_0_80px_rgba(0,0,0,0.15)] transition-all duration-500 transform overflow-hidden flex flex-col pointer-events-auto antialiased font-sans ${
+              className={`absolute top-1/2 -translate-y-1/2 left-0 w-[280px] sm:w-[320px] lg:w-[380px] h-[55vh] sm:h-[80vh] backdrop-blur-3xl shadow-[25px_0_80px_rgba(0,0,0,0.15)] transition-all duration-500 transform overflow-hidden flex flex-col pointer-events-auto antialiased font-sans ${
                 isProductInfoOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0'
               } rounded-r-[3rem] ${
                 isNightMode 
@@ -1443,31 +1484,78 @@ const App: React.FC = () => {
                                   return fileName === partNameForMatch || fileName === partKeyForMatch;
                                 });
 
+                                // Prioritize textures matching the matched catalog file name
+                                let partThumbnailUrl = '';
+                                if (match) {
+                                  const modelBaseName = match.name.replace(/\.fbx$/i, '').toLowerCase();
+                                  const matchedTex = catalogTextures.find(t => {
+                                    const lowTex = t.name.toLowerCase();
+                                    return lowTex.startsWith(modelBaseName) && lowTex.includes('preview');
+                                  }) || catalogTextures.find(t => t.name.toLowerCase().startsWith(modelBaseName));
+                                  if (matchedTex) {
+                                    partThumbnailUrl = matchedTex.url;
+                                  }
+                                }
+                                
+                                // If not found via match, find directly using partName or partKey
+                                if (!partThumbnailUrl) {
+                                  const pName = part.partName.toLowerCase();
+                                  const pKey = (part.partKey || '').toLowerCase();
+                                  const directTex = catalogTextures.find(t => {
+                                    const lowTex = t.name.toLowerCase();
+                                    return (lowTex.startsWith(pName) || lowTex.startsWith(pKey)) && lowTex.includes('preview');
+                                  }) || catalogTextures.find(t => {
+                                    const lowTex = t.name.toLowerCase();
+                                    return lowTex.startsWith(pName) || lowTex.startsWith(pKey);
+                                  });
+                                  if (directTex) {
+                                    partThumbnailUrl = directTex.url;
+                                  }
+                                }
+
                                 return (
                                   <button
                                     key={part.id}
-                                    onMouseEnter={() => setHoveredPartId(meshMatchTarget)}
-                                    onMouseLeave={() => setHoveredPartId(null)}
+                                    onMouseEnter={(e) => {
+                                      setHoveredPartId(meshMatchTarget);
+                                      if (isMobile) return;
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      setHoveredPartTooltip({
+                                        name: name,
+                                        description: description || '',
+                                        image: partThumbnailUrl || null,
+                                        rect
+                                      });
+                                    }}
+                                    onMouseLeave={() => {
+                                      setHoveredPartId(null);
+                                      setHoveredPartTooltip(null);
+                                    }}
                                     onClick={() => {
                                       if (activePart?.id === part.id) {
                                         handlePartClick(null);
                                         return;
                                       }
                                       
-                                      const p = {
-                                        id: part.id,
-                                        name: translatedParts[part.id]?.name || part.partName,
-                                        description: translatedParts[part.id]?.description || part.description,
-                                        position: new THREE.Vector3(),
-                                        size: new THREE.Vector3(),
-                                        mesh: undefined as any
-                                      };
-                                      handlePartClick(p);
+                                      if (selectedId) {
+                                        updateModelSettings(selectedId, { targetPartId: part.id });
+                                      } else {
+                                        const p = {
+                                          id: part.id,
+                                          name: translatedParts[part.id]?.name || part.partName,
+                                          description: translatedParts[part.id]?.description || part.description,
+                                          position: new THREE.Vector3(),
+                                          size: new THREE.Vector3(),
+                                          mesh: undefined as any
+                                        };
+                                        handlePartClick(p);
+                                      }
+                                      
                                       if (match) {
                                         handleAddFromUrl(match.url, match.name);
                                       }
                                     }}
-                                    className={`flex flex-col p-4 rounded-2xl border transition-all text-start relative group cursor-pointer ${
+                                    className={`flex flex-col sm:flex-row items-stretch p-4 rounded-2xl border transition-all text-start relative group cursor-pointer h-full gap-4 ${
                                       isActive 
                                         ? 'bg-yellow-50 border-yellow-500 border-2 shadow-lg shadow-yellow-900/10 text-yellow-950' 
                                         : isHovered
@@ -1475,18 +1563,46 @@ const App: React.FC = () => {
                                           : isNightMode ? 'bg-zinc-800/80 border-white/20 text-zinc-400 hover:border-white/40' : 'bg-white border-black/5 text-zinc-600 hover:border-yellow-500/30'
                                     }`}
                                   >
-                                    <div className="space-y-2">
-                                      <div className="flex items-start justify-between gap-2">
-                                        <div className="flex items-start gap-2">
-                                          <span className={`text-[10px] font-bold ${isRTL ? '' : 'uppercase'} w-20 shrink-0 opacity-60 ${isActive ? 'text-yellow-800' : isNightMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                                    {/* Preview Image with Border Frame */}
+                                    <div className="shrink-0 self-start sm:self-center">
+                                      <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl relative overflow-hidden border transition-colors duration-300 ${
+                                        isActive 
+                                          ? 'border-yellow-400 bg-white' 
+                                          : isNightMode 
+                                            ? 'border-white/10 bg-zinc-900' 
+                                            : 'border-black/5 bg-zinc-50'
+                                      } shadow-sm flex items-center justify-center`}>
+                                        {partThumbnailUrl ? (
+                                          <img 
+                                            src={partThumbnailUrl} 
+                                            alt={name}
+                                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                                            referrerPolicy="no-referrer"
+                                          />
+                                        ) : (
+                                          <div className={`w-full h-full flex items-center justify-center ${isActive ? 'text-yellow-600' : 'text-zinc-400'}`}>
+                                            {/* Cuboid icon representing component part */}
+                                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                            </svg>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Details layout */}
+                                    <div className="flex-1 space-y-2 min-w-0">
+                                      <div className="flex items-start justify-between gap-2 min-w-0 w-full">
+                                        <div className="flex items-start gap-2 min-w-0 flex-1">
+                                          <span className={`text-[10px] font-bold ${isRTL ? '' : 'uppercase'} w-14 sm:w-16 shrink-0 opacity-60 ${isActive ? 'text-yellow-800' : isNightMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
                                             {t.labelPartKey}:
                                           </span>
-                                          <span className={`text-[10px] font-black uppercase tracking-tight ${isActive ? 'text-yellow-900' : isNightMode ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                                          <span className={`text-[10px] font-black uppercase tracking-tight break-all ${isActive ? 'text-yellow-900' : isNightMode ? 'text-zinc-300' : 'text-zinc-700'}`}>
                                             {part.partKey || part.id.substring(0, 8)}
                                           </span>
                                         </div>
                                         {match && (
-                                          <div className={`p-1.5 rounded-full ${isActive ? 'bg-yellow-500/20' : 'bg-yellow-500/10'} group-hover:scale-110 transition-transform ${isRTL ? 'rotate-180' : ''}`}>
+                                          <div className={`p-1.5 rounded-full ${isActive ? 'bg-yellow-500/20' : 'bg-yellow-500/10'} group-hover:scale-110 transition-transform ${isRTL ? 'rotate-180' : ''} shrink-0`}>
                                             <svg className={`w-3.5 h-3.5 ${isActive ? 'text-yellow-600' : 'text-yellow-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
@@ -1495,11 +1611,11 @@ const App: React.FC = () => {
                                         )}
                                       </div>
                                       
-                                      <div className="flex items-start gap-2">
-                                        <span className={`text-[10px] font-bold ${isRTL ? '' : 'uppercase'} w-20 shrink-0 opacity-60 ${isActive ? 'text-yellow-800' : isNightMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                                      <div className="flex items-start gap-2 min-w-0 w-full">
+                                        <span className={`text-[10px] font-bold ${isRTL ? '' : 'uppercase'} w-14 sm:w-16 shrink-0 opacity-60 ${isActive ? 'text-yellow-800' : isNightMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
                                           {t.labelPartName}:
                                         </span>
-                                        <span className={`text-[11px] font-black ${isRTL ? '' : 'uppercase'} ${isActive ? 'text-zinc-900' : isNightMode ? 'text-white' : 'text-zinc-900'}`}>
+                                        <span className={`text-[11px] font-black ${isRTL ? '' : 'uppercase'} ${isActive ? 'text-zinc-900' : isNightMode ? 'text-white' : 'text-zinc-900'} break-words whitespace-normal min-w-0 flex-1`}>
                                           {name}
                                         </span>
                                       </div>
@@ -1538,7 +1654,7 @@ const App: React.FC = () => {
             <div className="flex items-center justify-between mb-3 sm:mb-4 shrink-0">
               <div className="flex flex-col">
                 <span className="text-[8px] font-black uppercase tracking-[0.3em] text-blue-600 leading-none mb-1">{t.partDetails}</span>
-                <h3 className="text-base sm:text-lg font-black text-zinc-800 uppercase tracking-tight truncate max-w-[180px] sm:max-w-none">{activePart.name}</h3>
+                <h3 className="text-base sm:text-lg font-black text-zinc-800 uppercase tracking-tight break-words whitespace-normal max-w-[180px] sm:max-w-none">{activePart.name}</h3>
               </div>
               <button 
                 onClick={() => { 
@@ -1600,6 +1716,55 @@ const App: React.FC = () => {
         hasAnimations={selectedModel?.hasAnimations}
         isSidebarOpen={isSidebarOpen}
       />
+
+      {/* PART PREVIEW TOOLTIP */}
+      {hoveredPartTooltip && createPortal(
+        <div 
+          className="fixed z-[9999] pointer-events-none transition-all duration-300 animate-in fade-in zoom-in-95"
+          style={{
+            top: Math.min(hoveredPartTooltip.rect.top, window.innerHeight - 400),
+            left: hoveredPartTooltip.rect.right + 16, 
+            width: '300px',
+          }}
+        >
+          <div className="bg-white/98 backdrop-blur-3xl rounded-[2rem] border border-black/10 shadow-[0_30px_100px_rgba(0,0,0,0.25)] overflow-hidden flex flex-col p-4 gap-3">
+            <div className="aspect-[4/3] w-full bg-zinc-50 rounded-[1.5rem] overflow-hidden border border-black/5 flex items-center justify-center">
+              {hoveredPartTooltip.image ? (
+                <img 
+                  src={hoveredPartTooltip.image} 
+                  alt={hoveredPartTooltip.name}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-zinc-50">
+                  <svg className="w-12 h-12 text-zinc-300 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                </div>
+              )}
+            </div>
+            
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-0.5">
+                <span className={`text-[9px] font-black uppercase tracking-[0.2em] text-blue-600 leading-none mb-1 ${isRTL ? 'text-start animate-pulse' : ''}`}>
+                  {t.partDetails || 'PART DETAILS'}
+                </span>
+                <h3 className={`text-lg font-black text-zinc-900 leading-tight uppercase tracking-tight break-words whitespace-normal ${isRTL ? 'text-start' : ''}`}>
+                  {hoveredPartTooltip.name}
+                </h3>
+              </div>
+              
+              {hoveredPartTooltip.description && (
+                <p className={`text-xs text-zinc-500 leading-relaxed font-medium line-clamp-3 ${isRTL ? 'text-start text-xs font-normal' : ''}`}>
+                  {hoveredPartTooltip.description}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
