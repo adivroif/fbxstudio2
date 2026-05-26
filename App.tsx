@@ -1231,10 +1231,10 @@ const App: React.FC = () => {
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
           className="w-10 h-10 sm:w-12 sm:h-12 bg-white rounded-xl sm:rounded-2xl shadow-xl border border-black/5 flex items-center justify-center hover:bg-zinc-50 transition-all group"
         >
-          <div className="space-y-1 sm:space-y-1.5">
-            <div className={`w-4 sm:w-5 h-0.5 bg-zinc-800 transition-all ${isSidebarOpen ? 'rotate-45 translate-y-1.5 sm:translate-y-2' : ''}`}></div>
-            <div className={`w-4 sm:w-5 h-0.5 bg-zinc-800 transition-all ${isSidebarOpen ? 'opacity-0' : ''}`}></div>
-            <div className={`w-4 sm:w-5 h-0.5 bg-zinc-800 transition-all ${isSidebarOpen ? '-rotate-45 -translate-y-1.5 sm:translate-y-2' : ''}`}></div>
+          <div className="relative w-5 h-4 flex flex-col justify-between">
+            <span className={`h-0.5 w-full bg-zinc-800 rounded-full transition-all duration-300 ${isSidebarOpen ? 'rotate-45 translate-y-[7px]' : ''}`} />
+            <span className={`h-0.5 w-full bg-zinc-800 rounded-full transition-all duration-300 ${isSidebarOpen ? 'opacity-0' : ''}`} />
+            <span className={`h-0.5 w-full bg-zinc-800 rounded-full transition-all duration-300 ${isSidebarOpen ? '-rotate-45 -translate-y-[7px]' : ''}`} />
           </div>
         </button>
       </div>
