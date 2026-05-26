@@ -12,7 +12,7 @@ dotenv.config();
 import { S3Client, ListObjectsV2Command, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { pipeline } from "stream/promises";
-import { GoogleGenAI, Modality, Type } from "@google/genai";
+import { GoogleGenAI, Modality, ThinkingLevel } from "@google/genai";
 import { v2 } from '@google-cloud/translate';
 
 const { Translate } = v2;
@@ -22,7 +22,6 @@ const __dirname = path.dirname(__filename);
 
 // Initialize Gemini
 let aiInstance: GoogleGenAI | null = null;
-let isGeminiQuotaExceeded = false;
 const getAI = () => {
   if (!aiInstance) {
     const apiKey = process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY;
@@ -47,7 +46,7 @@ const getAI = () => {
 let translateClient: v2.Translate | null = null;
 const getTranslate = () => {
   if (!translateClient) {
-    const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
+    const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY;
     if (!apiKey) {
       console.warn("⚠️ Warning: GOOGLE_TRANSLATE_API_KEY is missing from environment. Translations will use fallback.");
       return null;
@@ -121,12 +120,6 @@ async function startServer() {
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
-
-  // Global logger for API routes
-  app.use("/api", (req, res, next) => {
-    console.log(`[API Request] ${req.method} ${req.originalUrl}`);
-    next();
-  });
 
   // Ensure uploads directory exists
   const uploadDir = path.join(__dirname, "public", "uploads");
@@ -248,11 +241,6 @@ async function startServer() {
       const text = await response.text();
       if (!text || text.trim() === "") return res.send("10"); // Default to 10 if empty
       
-      if (text.trim().toLowerCase().startsWith("<!doctype") || text.trim().toLowerCase().startsWith("<html")) {
-        console.warn(`Azure returned HTML instead of JSON for inventory for ${productName}.`);
-        return res.send("10");
-      }
-      
       let data;
       try {
         data = JSON.parse(text);
@@ -292,12 +280,6 @@ async function startServer() {
         
         const text = await resp.text();
         if (!text || text.trim() === "") return null;
-        
-        // Check if response is HTML instead of JSON
-        if (text.trim().toLowerCase().startsWith("<!doctype") || text.trim().toLowerCase().startsWith("<html")) {
-          console.warn(`Azure returned HTML instead of JSON for product ${title}. Likely an error page.`);
-          return null;
-        }
         
         try {
           const parsed = JSON.parse(text);
@@ -355,6 +337,64 @@ async function startServer() {
     }
   });
 
+  // NEW: API Proxy Routes for Product Views, Likes, Dislikes, and Time
+  app.put("/api/products/:productId/view", async (req, res) => {
+    const { productId } = req.params;
+    const azureApiUrl = `https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/Products/${encodeURIComponent(productId)}/view`;
+    try {
+      console.log(`PUT request for view proxy: ${azureApiUrl}`);
+      const response = await fetchWithTimeout(azureApiUrl, {
+        method: "PUT"
+      }, 15000);
+      if (!response.ok) {
+        return res.status(response.status).send(await response.text());
+      }
+      const data = await response.json();
+      res.json(data);
+    } catch (err: any) {
+      console.error(`Error in view proxy for product ${productId}:`, err);
+      res.status(500).json({ error: "Failed to increment view", details: err.message });
+    }
+  });
+
+  app.put("/api/products/:productId/like", async (req, res) => {
+    const { productId } = req.params;
+    const azureApiUrl = `https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/Products/${encodeURIComponent(productId)}/like`;
+    try {
+      console.log(`PUT request for like proxy: ${azureApiUrl}`);
+      const response = await fetchWithTimeout(azureApiUrl, {
+        method: "PUT"
+      }, 15000);
+      if (!response.ok) {
+        return res.status(response.status).send(await response.text());
+      }
+      const data = await response.json();
+      res.json(data);
+    } catch (err: any) {
+      console.error(`Error in like proxy for product ${productId}:`, err);
+      res.status(500).json({ error: "Failed to like product", details: err.message });
+    }
+  });
+
+  app.put("/api/products/:productId/dislike", async (req, res) => {
+    const { productId } = req.params;
+    const azureApiUrl = `https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/Products/${encodeURIComponent(productId)}/dislike`;
+    try {
+      console.log(`PUT request for dislike proxy: ${azureApiUrl}`);
+      const response = await fetchWithTimeout(azureApiUrl, {
+        method: "PUT"
+      }, 15000);
+      if (!response.ok) {
+        return res.status(response.status).send(await response.text());
+      }
+      const data = await response.json();
+      res.json(data);
+    } catch (err: any) {
+      console.error(`Error in dislike proxy for product ${productId}:`, err);
+      res.status(500).json({ error: "Failed to dislike product", details: err.message });
+    }
+  });
+
   // NEW: API Route for categories by tenant name
   app.get("/api/categories/:tenantName", async (req, res) => {
     const { tenantName } = req.params;
@@ -380,17 +420,7 @@ async function startServer() {
         throw new Error(`Azure API responded with status: ${response.status}`);
       }
 
-      const rawText = await response.text();
-      if (!rawText || rawText.trim() === "") {
-        return res.json([]);
-      }
-
-      if (rawText.trim().toLowerCase().startsWith("<!doctype") || rawText.trim().toLowerCase().startsWith("<html")) {
-        console.warn(`Azure returned HTML instead of JSON for categories listing. Possible tenant mismatch or Azure error.`);
-        return res.json([]);
-      }
-
-      const data = JSON.parse(rawText);
+      const data = await response.json();
       res.json(data);
     } catch (err: any) {
       console.error("Azure Categories API Error:", err);
@@ -457,17 +487,7 @@ async function startServer() {
         throw new Error(`Azure API responded with status: ${response.status}`);
       }
 
-      const rawText = await response.text();
-      if (!rawText || rawText.trim() === "") {
-        return res.json([]);
-      }
-
-      if (rawText.trim().toLowerCase().startsWith("<!doctype") || rawText.trim().toLowerCase().startsWith("<html")) {
-        console.warn(`Azure returned HTML instead of JSON for files listing. Possible tenant mismatch or Azure error.`);
-        return res.json([]);
-      }
-
-      const data = JSON.parse(rawText);
+      const data = await response.json();
       console.log(`Azure GET-FILES API Data (${folder}/${clientName}):`, JSON.stringify(data).substring(0, 500));
       
       // Helper to rewrite Azure URLs to local proxy
@@ -529,17 +549,7 @@ async function startServer() {
         throw new Error(`Azure API responded with status: ${response.status}`);
       }
 
-      const rawText = await response.text();
-      if (!rawText || rawText.trim() === "") {
-        return res.json([]);
-      }
-
-      if (rawText.trim().toLowerCase().startsWith("<!doctype") || rawText.trim().toLowerCase().startsWith("<html")) {
-        console.warn(`Azure returned HTML instead of JSON for images listing. Possible tenant mismatch or Azure error.`);
-        return res.json([]);
-      }
-
-      const rawData = JSON.parse(rawText);
+      const rawData = await response.json();
       
       // Helper to find list in various response formats
       const getListData = (raw: any) => {
@@ -623,12 +633,6 @@ async function startServer() {
       const contentType = response.headers.get("Content-Type");
       if (contentType) res.setHeader("Content-Type", contentType);
       
-      // Check if we are receiving HTML for a file that isn't supposed to be HTML
-      if (contentType && contentType.includes("text/html") && !fileName.toString().toLowerCase().endsWith(".html")) {
-        console.warn(`[Proxy Error] Azure returned HTML instead of expected file ${fileName}. Returning 404.`);
-        return res.status(404).send("File not found on remote server (Azure returned error page)");
-      }
-      
       const contentLength = response.headers.get("Content-Length");
       if (contentLength) res.setHeader("Content-Length", contentLength);
 
@@ -659,589 +663,6 @@ async function startServer() {
       res.status(500).send(`Failed to proxy file from Azure: ${err.message}`);
     }
   });
-
-  // Offline auto-translators for mechanical/brakes industry keywords
-  const phrasesToReplace: Record<string, Record<string, string>> = {
-    'he': {
-      "caliper bush 39 mm long type": "תותב קליפר 39 מ\"מ סוג ארוך",
-      "caliper bush 39mm long type": "תותב קליפר 39 מ\"מ סוג ארוך",
-      "caliper bush": "תותב קליפר",
-      "long type": "סוג ארוך",
-      "short type": "סוג קצר",
-      "long version": "גרסה ארוכה",
-      "short version": "גרסה קצרה",
-      "39 mm": "39 מ״מ",
-      "39mm": "39 מ״מ",
-      "present at site": "קיים באתר",
-      "no description available": "אין תיאור זמין",
-      "unnamed part": "חלק ללא שם"
-    },
-    'ar': {
-      "caliper bush 39 mm long type": "جلبة فرجار 39 مم نوع طويل",
-      "caliper bush 39mm long type": "جلبة فرجار 39 مم نوع طويل",
-      "caliper bush": "جلبة فرجار",
-      "long type": "نوع طويل",
-      "short type": "نوع قصير",
-      "long version": "نسخة طويلة",
-      "short version": "نسخة قصيرة",
-      "39 mm": "39 مم",
-      "39mm": "39 مم",
-      "present at site": "متوفر في الموقع",
-      "no description available": "لا يوجد وصف متاح",
-      "unnamed part": "جزء غير مسمى"
-    },
-    'ru': {
-      "caliper bush 39 mm long type": "направляющая суппорта втулка 39 мм длинная",
-      "caliper bush 39mm long type": "направляющая суппорта втулка 39 мм длинная",
-      "caliper bush": "направляющая суппорта втулка",
-      "long type": "длинный тип",
-      "short type": "короткий тип",
-      "long version": "длинная версия",
-      "short version": "короткая версия",
-      "39 mm": "39 мм",
-      "39mm": "39 мм",
-      "present at site": "присутствует на сайте",
-      "no description available": "описание отсутствует",
-      "unnamed part": "безымянная деталь"
-    }
-  };
-
-  const glossaryHe: Record<string, string> = {
-    "caliper": "קליפר",
-    "bush": "תותב",
-    "bushing": "תותב (בושינג)",
-    "long": "ארוך",
-    "short": "קצר",
-    "type": "סוג",
-    "brake": "בלם",
-    "brakes": "בלמים",
-    "pad": "רפידה",
-    "pads": "רפידות",
-    "disc": "דיסק",
-    "discs": "דיסקים",
-    "rotor": "רוטור",
-    "rotors": "רוטורים",
-    "piston": "בוכנה",
-    "pistons": "בוכנות",
-    "seal": "אטם",
-    "seals": "אטמים",
-    "dust": "אבק",
-    "boot": "גרמושקה",
-    "boots": "גרמושקות",
-    "spring": "קפיץ",
-    "springs": "קפיצים",
-    "pin": "פין",
-    "pins": "פינים",
-    "bolt": "בורג",
-    "bolts": "ברגים",
-    "screw": "בורג",
-    "screws": "ברגים",
-    "nut": "אום",
-    "nuts": "אומים",
-    "washer": "דיסקית (שייבה)",
-    "washers": "דיסקיות",
-    "clip": "תפס (קליפס)",
-    "clips": "תפסים",
-    "bracket": "תושבת",
-    "brackets": "תושבות",
-    "housing": "בית תושבת",
-    "assembly": "מכלול",
-    "cover": "כיסוי",
-    "covers": "כיסויים",
-    "cap": "מכסה",
-    "caps": "מכסים",
-    "hose": "צינור",
-    "hoses": "צינורות",
-    "tube": "צינורית",
-    "tubes": "צינוריות",
-    "valve": "שסתום",
-    "valves": "שסתומים",
-    "sensor": "חיישן",
-    "sensors": "חיישנים",
-    "cable": "כבל",
-    "cables": "כבלים",
-    "wire": "חוט",
-    "wires": "חוטים",
-    "plug": "פקק",
-    "plugs": "פקקים",
-    "adapter": "מתאם",
-    "adapters": "מתאמים",
-    "lever": "מנוף",
-    "levers": "מנופים",
-    "handle": "ידית",
-    "handles": "ידיות",
-    "shaft": "ציר",
-    "shafts": "צירים",
-    "bearing": "מיסב",
-    "bearings": "מיסבים",
-    "gear": "גלגל שיניים",
-    "gears": "גלגלי שיניים",
-    "pulley": "גלגלת",
-    "pulleys": "גלגלות",
-    "belt": "רצועה",
-    "belts": "רצועות",
-    "chain": "שרשרת",
-    "chains": "שרשראות",
-    "ring": "טבעת",
-    "rings": "טבעות",
-    "o-ring": "אטם טבעתי (O-ring)",
-    "gasket": "אטם (גסקט)",
-    "gaskets": "אטמים",
-    "clamp": "חבק (קלאמפ)",
-    "clamps": "חבקים",
-    "plate": "פלטה (לוחית)",
-    "plates": "לוחיות",
-    "mount": "תושבת",
-    "mounts": "תושבות",
-    "link": "חוליה",
-    "links": "חוליות",
-    "arm": "זרוע",
-    "arms": "זרועות",
-    "suspension": "מתלה",
-    "shock": "בולם זעזועים",
-    "absorber": "בולמי זעזועים",
-    "strut": "בולם",
-    "struts": "בולמים",
-    "joint": "מפרק",
-    "joints": "מפרקים",
-    "ball": "כדור",
-    "rod": "מוט",
-    "rods": "מוטות",
-    "bar": "מוט",
-    "bars": "מוטות",
-    "wheel": "גלגל",
-    "wheels": "גלגלים",
-    "hub": "נאבה (טבור הגלגל)",
-    "hubs": "נאבות",
-    "rim": "ג'אנט",
-    "rims": "ג'אנטים",
-    "tire": "צמיג",
-    "tires": "צמיגים",
-    "tyre": "צמיג",
-    "tyres": "צמיגים",
-    "flange": "אוגן (פלנץ')",
-    "flanges": "אוגנים",
-    "collar": "טבעת הידוק",
-    "sleeve": "שרוול",
-    "sleeves": "שרוולים",
-    "spacer": "ספייסר (מרחיק)",
-    "spacers": "ספייסרים",
-    "cylinder": "צילינדר",
-    "cylinders": "צילינדרים",
-    "manifold": "סעפת",
-    "manifolds": "סעפות",
-    "main": "ראשי",
-    "secondary": "משני",
-    "left": "שמאל (L)",
-    "right": "ימין (R)",
-    "front": "קדמי",
-    "rear": "אחורי",
-    "upper": "עליון",
-    "lower": "תחתון",
-    "inner": "פנימי",
-    "outer": "חיצוני",
-    "side": "צד",
-    "middle": "אמצעי",
-    "center": "מרכז",
-    "large": "גדול",
-    "small": "קטן",
-    "medium": "בינוני",
-    "heavy": "כבד",
-    "light": "קל",
-    "new": "חדש",
-    "old": "ישן",
-    "standard": "סטנדרטי",
-    "custom": "מותאם אישית",
-    "universal": "אוניברסלי",
-    "spec": "מפרט",
-    "details": "פרטים",
-    "parts": "חלקים",
-    "tenants": "לקוחות",
-    "images": "תמונות",
-    "mm": "מ״מ"
-  };
-
-  const glossaryAr: Record<string, string> = {
-    "caliper": "فرجار",
-    "bush": "جلبة",
-    "bushing": "جلبة",
-    "long": "طويل",
-    "short": "قصير",
-    "type": "نوع",
-    "brake": "فرامل",
-    "brakes": "فرامل",
-    "pad": "وسادة فرملة",
-    "pads": "وسادات فرملة",
-    "disc": "قرص",
-    "discs": "أقراص",
-    "rotor": "دوار",
-    "rotors": "دوارات",
-    "piston": "مكبس",
-    "pistons": "مكابس",
-    "seal": "ختم",
-    "seals": "أختام",
-    "dust": "غبار",
-    "boot": "غطاء غبار",
-    "boots": "أغطية غبار",
-    "spring": "نابض",
-    "springs": "نوابض",
-    "pin": "دبوس",
-    "pins": "دبابيس",
-    "bolt": "مسمار",
-    "bolts": "مسامير",
-    "screw": "برغي",
-    "screws": "براغي",
-    "nut": "صامولة",
-    "nuts": "صواميل",
-    "washer": "حلقة",
-    "washers": "حلقات",
-    "clip": "مشبك",
-    "clips": "مشابك",
-    "bracket": "كتيفة",
-    "brackets": "كتيفات",
-    "housing": "هيكل",
-    "assembly": "تجميع",
-    "cover": "غطاء",
-    "covers": "أغطية",
-    "cap": "غطاء",
-    "caps": "أغطية",
-    "hose": "خرطوم",
-    "hoses": "خراطيم",
-    "tube": "أنبوب",
-    "tubes": "أنابيب",
-    "valve": "صمام",
-    "valves": "صمامات",
-    "sensor": "مستشعر",
-    "sensors": "مستشعرات",
-    "cable": "كابل",
-    "cables": "كابلات",
-    "wire": "سلك",
-    "wires": "أسلاك",
-    "plug": "سدادة",
-    "plugs": "سدادات",
-    "adapter": "محول",
-    "adapters": "محولات",
-    "lever": "ذراع",
-    "levers": "أذرع",
-    "handle": "مقبض",
-    "handles": "مقابض",
-    "shaft": "عمود",
-    "shafts": "أعمدة",
-    "bearing": "محمل",
-    "bearings": "محامل",
-    "gear": "ترس",
-    "gears": "تروس",
-    "pulley": "بكرة",
-    "pulleys": "بكرات",
-    "belt": "حزام",
-    "belts": "أحزمة",
-    "chain": "سلسلة",
-    "chains": "سلاسل",
-    "ring": "حلقة",
-    "rings": "حلقات",
-    "o-ring": "حلقة دائرية",
-    "gasket": "حشية",
-    "gaskets": "حشيات",
-    "clamp": "مشبك تثبيت",
-    "clamps": "مشابك تثبيت",
-    "plate": "صفيحة",
-    "plates": "صفائح",
-    "mount": "قاعدة",
-    "mounts": "قواعد",
-    "link": "وصلة",
-    "links": "وصلات",
-    "arm": "ذراع",
-    "arms": "أذرع",
-    "suspension": "نظام التعليق",
-    "shock": "ممتص الصدمات",
-    "absorber": "ممتص صدمات",
-    "strut": "دعامة",
-    "struts": "دعامة",
-    "joint": "مفصل",
-    "joints": "مفاصل",
-    "ball": "كرة",
-    "rod": "قضيب",
-    "rods": "قضبان",
-    "bar": "قضيب",
-    "bars": "قضبان",
-    "wheel": "عجلة",
-    "wheels": "عجلات",
-    "hub": "صرة",
-    "hubs": "صرر",
-    "rim": "إطار معدني",
-    "rims": "إطارات معدنية",
-    "tire": "إطار",
-    "tires": "إطارات",
-    "tyre": "إطار",
-    "tyres": "إطارات",
-    "flange": "شفة",
-    "flanges": "شفاه",
-    "collar": "طوق",
-    "sleeve": "كم",
-    "sleeves": "أكمام",
-    "spacer": "فاصل",
-    "spacers": "فواصل",
-    "cylinder": "أسطوانة",
-    "cylinders": "أسطوانات",
-    "manifold": "متشعب",
-    "manifolds": "متشعبات",
-    "main": "رئيسي",
-    "secondary": "ثانوي",
-    "left": "يسار",
-    "right": "يمين",
-    "front": "أمامي",
-    "rear": "خلفي",
-    "upper": "علوي",
-    "lower": "سفلي",
-    "inner": "داخلي",
-    "outer": "خارجي",
-    "side": "جانبي",
-    "middle": "أوسط",
-    "center": "مركز",
-    "large": "كبير",
-    "small": "صغير",
-    "medium": "متوسط",
-    "heavy": "ثقيل",
-    "light": "خفيف",
-    "new": "جديد",
-    "old": "قديم",
-    "standard": "قياسي",
-    "custom": "مخصص",
-    "universal": "شامل",
-    "spec": "مواصفات",
-    "details": "تفاصيل",
-    "parts": "أجزاء",
-    "tenants": "المستأجرين",
-    "images": "صور",
-    "mm": "مم"
-  };
-
-  const glossaryRu: Record<string, string> = {
-    "caliper": "суппорт",
-    "bush": "втулка",
-    "bushing": "втулка",
-    "long": "длинный",
-    "short": "короткий",
-    "type": "тип",
-    "brake": "тормоз",
-    "brakes": "тормоза",
-    "pad": "тормозная колодка",
-    "pads": "колодки",
-    "disc": "тормозной диск",
-    "discs": "диски",
-    "rotor": "ротор",
-    "rotors": "роторы",
-    "piston": "поршень",
-    "pistons": "поршни",
-    "seal": "сальник",
-    "seals": "сальники",
-    "dust": "пыль",
-    "boot": "пыльник",
-    "boots": "пыльники",
-    "spring": "пружина",
-    "springs": "пружины",
-    "pin": "палец",
-    "pins": "пальцы",
-    "bolt": "болт",
-    "bolts": "болты",
-    "screw": "винт",
-    "screws": "винты",
-    "nut": "гайка",
-    "nuts": "гайки",
-    "washer": "шайба",
-    "washers": "шайбы",
-    "clip": "зажим",
-    "clips": "зажимы",
-    "bracket": "кронштейн",
-    "brackets": "кронштейны",
-    "housing": "корпус",
-    "assembly": "узел в сборе",
-    "cover": "крышка",
-    "covers": "крышки",
-    "cap": "колпачок",
-    "caps": "колпачки",
-    "hose": "шланг",
-    "hoses": "шланги",
-    "tube": "трубка",
-    "tubes": "трубки",
-    "valve": "клапан",
-    "valves": "клапаны",
-    "sensor": "датчик",
-    "sensors": "датчики",
-    "cable": "кабель",
-    "cables": "кабели",
-    "wire": "провод",
-    "wires": "провода",
-    "plug": "заглушка",
-    "plugs": "заглушки",
-    "adapter": "адаптер",
-    "adapters": "адаптеры",
-    "lever": "рычаг",
-    "levers": "рычаги",
-    "handle": "ручка",
-    "handles": "ручки",
-    "shaft": "вал",
-    "shafts": "валы",
-    "bearing": "подшипник",
-    "bearings": "подшипники",
-    "gear": "шестерня",
-    "gears": "шестерни",
-    "pulley": "шкив",
-    "pulleys": "шкивы",
-    "belt": "ремень",
-    "belts": "ремни",
-    "chain": "цепь",
-    "chains": "цепи",
-    "ring": "кольцо",
-    "rings": "кольца",
-    "o-ring": "уплотнительное кольцо",
-    "gasket": "прокладка",
-    "gaskets": "прокладки",
-    "clamp": "хомут",
-    "clamps": "хомуты",
-    "plate": "пластина",
-    "plates": "пластины",
-    "mount": "крепление",
-    "mounts": "крепления",
-    "link": "звено",
-    "links": "звенья",
-    "arm": "рычаг",
-    "arms": "рычаги",
-    "suspension": "подвеска",
-    "shock": "амортизатор",
-    "absorber": "амортизаторы",
-    "strut": "стойка амортизатора",
-    "struts": "стойки",
-    "joint": "шарнир",
-    "joints": "шарниры",
-    "ball": "шаровый",
-    "rod": "тяга",
-    "rods": "тяги",
-    "bar": "штанга",
-    "bars": "штанги",
-    "wheel": "колесо",
-    "wheels": "колеса",
-    "hub": "ступица",
-    "hubs": "ступицы",
-    "rim": "обод",
-    "rims": "ободья",
-    "tire": "шина",
-    "tires": "шины",
-    "tyre": "шина",
-    "tyres": "шины",
-    "flange": "фланец",
-    "flanges": "фланцы",
-    "collar": "хомут крепления",
-    "sleeve": "гильза",
-    "sleeves": "гильзы",
-    "spacer": "проставка",
-    "spacers": "проставки",
-    "cylinder": "цилиндр",
-    "cylinders": "цилиндры",
-    "manifold": "коллектор",
-    "manifolds": "коллекторы",
-    "main": "главный",
-    "secondary": "вторичный",
-    "left": "левый",
-    "right": "правый",
-    "front": "передний",
-    "rear": "задний",
-    "upper": "верхний",
-    "lower": "нижний",
-    "inner": "внутренний",
-    "outer": "внешний",
-    "side": "боковой",
-    "middle": "средний",
-    "center": "центральный",
-    "large": "большой",
-    "small": "маленький",
-    "medium": "средний",
-    "heavy": "тяжелый",
-    "light": "легкий",
-    "new": "новый",
-    "old": "старый",
-    "standard": "стандартный",
-    "custom": "индивидуальный",
-    "universal": "универсальный",
-    "spec": "характеристики",
-    "details": "детали",
-    "parts": "части",
-    "tenants": "клиенты",
-    "images": "изображения",
-    "mm": "мм"
-  };
-
-  const wordGlossaries: Record<string, Record<string, string>> = {
-    'he': glossaryHe,
-    'ar': glossaryAr,
-    'ru': glossaryRu
-  };
-
-  const translateOffline = (text: string, langCode: string): string => {
-    const code = langCode.toLowerCase().trim();
-    const trimmed = text.trim();
-    if (!trimmed) return "";
-    
-    // Remove extension for lookup but don't append it to keep UI names super beautiful
-    let cleanText = trimmed;
-    const fbxMatch = cleanText.match(/^(.*)\.fbx$/i);
-    if (fbxMatch) {
-      cleanText = fbxMatch[1].trim();
-    }
-
-    const lowerText = cleanText.toLowerCase();
-
-    const phrases = phrasesToReplace[code];
-    const glossary = wordGlossaries[code];
-
-    if (!phrases && !glossary) {
-      return trimmed;
-    }
-
-    if (phrases) {
-      // Check for exact full phrase matches first
-      if (phrases[lowerText]) {
-        return phrases[lowerText];
-      }
-      
-      let replaced = lowerText;
-      
-      // Sort keys descending by length to match longer phrases first to avoid greedy matching
-      const sortedKeys = Object.keys(phrases).sort((a,b) => b.length - a.length);
-      sortedKeys.forEach(eng => {
-        const trans = phrases[eng];
-        // Replace matching substrings (not strictly bound to words if they wrap numbers, like 39mm)
-        if (replaced.includes(eng)) {
-          replaced = replaced.split(eng).join(trans);
-        }
-      });
-
-      if (glossary) {
-        // Translate remaining standalone English words
-        const regexWords = /([a-zA-Z]{3,})/g;
-        replaced = replaced.replace(regexWords, (match) => {
-          const wordLower = match.toLowerCase();
-          if (glossary[wordLower]) {
-            return glossary[wordLower];
-          }
-          if (phrases[wordLower]) {
-            return phrases[wordLower];
-          }
-          return match;
-        });
-      }
-
-      // Final cleanups and return
-      let finalResult = replaced.trim();
-      if (code === 'ru' && finalResult.length > 0) {
-        // Capitalize first letter of Russian string
-        finalResult = finalResult.charAt(0).toUpperCase() + finalResult.slice(1);
-      }
-      return finalResult;
-    }
-
-    return trimmed;
-  };
 
   // API Route for translation
   app.post("/api/ai/translate", async (req, res) => {
@@ -1279,190 +700,331 @@ async function startServer() {
     if (langMap[lowerLang]) {
       langCode = langMap[lowerLang];
     } else if (lowerLang.length > 2 && !lowerLang.includes('-')) {
-      // If it's a long name not in map, default to something or try to use it as-is (might fail)
       console.warn(`Unknown language name: ${targetLanguage}, using as-is.`);
     } else if (lowerLang.includes('-')) {
-      // Handle codes like he-IL -> he
       langCode = lowerLang.split('-')[0];
     }
 
-    // Filter out invalid items to prevent API errors
-    const uniqueTextsMap = new Map<string, number[]>();
-    texts.forEach((t, i) => {
-      const cleaned = (t === null || t === undefined) ? "" : String(t).trim();
-      if (cleaned.length > 0) {
-        if (!uniqueTextsMap.has(cleaned)) {
-          uniqueTextsMap.set(cleaned, []);
-        }
-        uniqueTextsMap.get(cleaned)!.push(i);
+    // Helper to preprocess technical codes/shorthands for natural translation
+    const preprocessForTranslation = (text: string): string => {
+      let cleaned = text.trim();
+      if (langCode !== 'en' && /[a-zA-Z]/.test(cleaned)) {
+        cleaned = cleaned
+          .replace(/\bPart\s*No\.?\s*:/gi, "Part Number:")
+          .replace(/\bPart\s*No\.?\b/gi, "Part Number")
+          .replace(/\bPart\s*Number\s*:/gi, "Part Number:")
+          .replace(/\bP\/?N\s*:/gi, "Part Number:")
+          .replace(/\bP\s*N\s*:/gi, "Part Number:")
+          .replace(/\bP\.N\.\s*:/gi, "Part Number:")
+          .replace(/\bPart\s*ID\s*:/gi, "Part Number:")
+          .replace(/\bPart\s*ID\b/gi, "Part Number")
+          .replace(/\bOEM\s*:/gi, "OEM Manufacturer:")
+          .replace(/\bOEM\b/gi, "OEM Manufacturer")
+          .replace(/\bCategory\s*:/gi, "Category:")
+          .replace(/\bCategory\b/gi, "Category")
+          .replace(/\bProduct\s*Ref\.?\s*:/gi, "Product Reference:")
+          .replace(/\bProduct\s*Ref\.?\b/gi, "Product Reference");
       }
-    });
+      return cleaned;
+    };
 
-    const uniqueValidTexts = Array.from(uniqueTextsMap.keys());
+    // Filter out invalid items to prevent API errors
+    const validTexts = texts.map(t => {
+      if (t === null || t === undefined) return "";
+      return preprocessForTranslation(String(t));
+    }).filter(t => t.length > 0);
     
-    if (uniqueValidTexts.length === 0) {
+    if (validTexts.length === 0) {
       console.log("No valid texts to translate, returning originals.");
       return res.json({ translated: texts });
     }
 
-    // Primary: Attempt Gemini first as it's a major capability of this environment and more robust
-    if (ai && !isGeminiQuotaExceeded) {
-      try {
-        console.log(`Using Gemini for translation to ${targetLanguage} (${uniqueValidTexts.length} unique items)...`);
-        const prompt = `Translate the following list of strings to ${targetLanguage}. 
-Return ONLY a valid JSON array of strings in the exact same order.
-If you cannot translate a string, return the original text.
+    const translatedResultsMap = new Map<string, string>();
+    const uniqueTexts = Array.from(new Set(validTexts));
+    
+    const BATCH_SIZE = 25;
+    for (let i = 0; i < uniqueTexts.length; i += BATCH_SIZE) {
+      const batch = uniqueTexts.slice(i, i + BATCH_SIZE);
+      let batchResults: string[] = [];
+      let success = false;
 
-List to translate:
-${JSON.stringify(uniqueValidTexts)}`;
-
-        const result = await ai.models.generateContent({
-          model: "gemini-3.1-flash-lite",
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING }
-            }
-          }
-        });
-
-        let translatedUnique: string[] = [];
+      // Try 1: Google Cloud Translate
+      if (translate) {
         try {
-          translatedUnique = JSON.parse(result.text || "[]");
-        } catch (e) {
-          console.error("Gemini returned invalid JSON for translation.");
-        }
-        
-        if (translatedUnique.length === uniqueValidTexts.length) {
-          const finalResults = new Array(texts.length).fill("");
-          // Fill original texts for everything first
-          texts.forEach((t, i) => finalResults[i] = t);
-          
-          // Map translated unique back to original indices
-          uniqueValidTexts.forEach((originalText, uniqueIdx) => {
-            const indices = uniqueTextsMap.get(originalText) || [];
-            indices.forEach(originalIdx => {
-              finalResults[originalIdx] = translatedUnique[uniqueIdx];
-            });
-          });
-          
-          return res.json({ translated: finalResults });
-        } else {
-          console.warn(`Gemini returned ${translatedUnique.length} items but expected ${uniqueValidTexts.length}. Falling back to secondary methods.`);
-        }
-      } catch (geminiErr: any) {
-        const errMsg = geminiErr?.message || String(geminiErr);
-        if (errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("depleted") || errMsg.includes("credits")) {
-          isGeminiQuotaExceeded = true;
-          console.warn("⚠️ [Translation] Gemini API credits are depleted or quota is exhausted. Automatically switching to high-fidelity offline translation engine for instant zero-latency processing.");
-        } else {
-          console.warn("Gemini translation attempt failed, checking for secondary methods:", errMsg);
-        }
-      }
-    }
-
-    // Secondary: Attempt Cloud Translation if Gemini failed or is unavailable
-    if (translate && !isGeminiQuotaExceeded) {
-      try {
-        console.log(`Attempting Cloud Translation as fallback for ${uniqueValidTexts.length} unique items to codes='${langCode}'...`);
-        
-        const BATCH_SIZE = 50;
-        const translatedResults: string[] = [];
-        
-        for (let i = 0; i < uniqueValidTexts.length; i += BATCH_SIZE) {
-          const batch = uniqueValidTexts.slice(i, i + BATCH_SIZE);
+          console.log(`[Translate API] Translating batch of ${batch.length} items to '${langCode}'...`);
           const [translations] = await translate.translate(batch, langCode);
-          const results = Array.isArray(translations) ? translations : [translations];
-          translatedResults.push(...results);
+          batchResults = Array.isArray(translations) ? translations : [translations];
+          if (batchResults.length === batch.length) {
+            success = true;
+            console.log(`[Translate API] Batch translated successfully.`);
+          }
+        } catch (err: any) {
+          console.error("[Translate API] Error in Cloud Translation batch:", err.message || err);
         }
-        
-        if (translatedResults.length === uniqueValidTexts.length) {
-          const finalResults = new Array(texts.length).fill("");
-          texts.forEach((t, i) => finalResults[i] = t);
+      }
+
+      // Try 2: Gemini Fallback with JSON structured schema
+      if (!success && ai) {
+        try {
+          console.log(`[Gemini Fallback] Translating batch of ${batch.length} items to '${targetLanguage}'...`);
+          const prompt = `You are a professional translator. Translate this array of strings to correct and natural ${targetLanguage}:\n${JSON.stringify(batch)}\n\nIMPORTANT: Maintain technical and 3D model terminology correctly and output the exact same number of items in the response array (exactly ${batch.length} items).`;
           
-          uniqueValidTexts.forEach((originalText, uniqueIdx) => {
-            const indices = uniqueTextsMap.get(originalText) || [];
-            indices.forEach(originalIdx => {
-              finalResults[originalIdx] = translatedResults[uniqueIdx];
-            });
+          const result = await ai.models.generateContent({
+            model: "gemini-3.5-flash",
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: "ARRAY",
+                items: { type: "STRING" },
+                description: "List of translated texts matching the exact sequence and length of the inputs."
+              }
+            }
           });
-          
-          return res.json({ translated: finalResults });
+
+          const responseText = (result.text || "").trim();
+          const parsed = JSON.parse(responseText);
+          if (Array.isArray(parsed) && parsed.length === batch.length) {
+            batchResults = parsed;
+            success = true;
+            console.log(`[Gemini Fallback] Batch translated successfully via structured schema.`);
+          } else {
+            console.warn(`[Gemini Fallback] Schema output length mismatch or not an array. Expected ${batch.length}, got ${parsed?.length}.`);
+          }
+        } catch (geminiErr: any) {
+          console.error("[Gemini Fallback] Gemini translation failed for batch:", geminiErr.message || geminiErr);
         }
-      } catch (err: any) {
-        if (err.message?.includes('blocked') || err.code === 403) {
-          console.warn("Cloud Translation API is blocked or restricted. Using ultimate fallback.");
-        } else {
-          console.error("Cloud Translation API Error details:", err);
+      }
+
+      // Try 3: If batch translation failed entirely, try items individually
+      if (!success) {
+        console.warn(`[Fallback] Batch translation failed, falling back to individual item translation for ${batch.length} items...`);
+        for (const item of batch) {
+          let itemResult = item;
+          let itemSuccess = false;
+
+          if (translate) {
+            try {
+              const [translation] = await translate.translate(item, langCode);
+              itemResult = translation;
+              itemSuccess = true;
+            } catch (err) {}
+          }
+
+          if (!itemSuccess && ai) {
+            try {
+              const prompt = `Translate this text to ${targetLanguage}. Return ONLY the direct translation. Text: "${item}"`;
+              const result = await ai.models.generateContent({
+                model: "gemini-3.5-flash",
+                contents: [{ role: "user", parts: [{ text: prompt }] }]
+              });
+              itemResult = cleanTranslationText(result.text || item);
+              itemSuccess = true;
+            } catch (err) {}
+          }
+
+          translatedResultsMap.set(item, itemResult);
         }
+      } else {
+        batch.forEach((item, idx) => {
+          translatedResultsMap.set(item, batchResults[idx] || item);
+        });
       }
     }
 
-    // Ultimate fallback: return translated via the powerful offline dictionary engine
-    if (!isGeminiQuotaExceeded) {
-      console.warn("All live translation APIs failed. Falling back to the ultimate offline dictionary engine.");
-    }
+    // Map back to original input array (preserving indices and empty/invalid values)
+    const finalResults = texts.map(t => {
+      if (t !== null && t !== undefined && String(t).trim().length > 0) {
+        const cleaned = preprocessForTranslation(String(t));
+        return translatedResultsMap.get(cleaned) || String(t);
+      }
+      return t;
+    });
+
+    res.json({ translated: finalResults });
+  });
+
+  const cleanTranslationText = (txt: string): string => {
+    return txt
+      .replace(/^(translation|translated text|hebrew|arabic|russian|english|עברית|ערבית|רוסית|אנגלית):\s*/i, '')
+      .replace(/^["'“”]|["'“”]$/g, '') // Remove quotes including smart quotes
+      .replace(/\*\*+/g, "") // Remove bold markdown symbols
+      .replace(/__+/g, "")
+      .replace(/`+/g, "")
+      .replace(/\[[^\]]*\]/g, "") // Remove brackets with text inside (e.g. [Mesh], [Object])
+      .replace(/נ"צ מוצר/g, "מק\"ט")
+      .replace(/נ"צ/g, "מק\"ט")
+      // Replace colons, semicolons, and dashes representing labels/separators with a full stop and space to force a beautiful pause between sections
+      .replace(/:/g, ".  ")
+      .replace(/;/g, ".  ")
+      .replace(/\s*[\/\\]\s*/g, ",  ") // Clean slashes with spacious commas
+      .replace(/[#*•\-_]+/g, " ") // Clean weird marks
+      // Keep pauses when reading lists or categories
+      .replace(/,\s*/g, ",  ") // Expand existing commas with a bit more spacing for breathing room
+      .replace(/\s+/g, " ") // Clean multiple spaces
+      .trim();
+  };
+
+  let cachedVoiceId: string | null = null;
+
+  const getElevenLabsVoiceId = async (apiKey: string): Promise<string> => {
+    if (cachedVoiceId) return cachedVoiceId;
+
     try {
-      const offlineResults = texts.map(t => translateOffline(String(t), langCode));
-      return res.json({ translated: offlineResults });
-    } catch (offlineErr) {
-      console.error("Offline helper translator failed:", offlineErr);
+      const resp = await fetch("https://api.elevenlabs.io/v1/voices", {
+        headers: { "xi-api-key": apiKey }
+      });
+      if (resp.ok) {
+        const data = await resp.json() as { voices: Array<{ voice_id: string; category: string; name: string }> };
+        const premade = (data.voices || []).filter(v => v.category === "premade");
+        if (premade.length > 0) {
+          const preferredVec = premade.find(v => ["Brian", "Rachel", "Bella", "Nicole", "Antoni", "Adam"].includes(v.name));
+          cachedVoiceId = preferredVec ? preferredVec.voice_id : premade[0].voice_id;
+          console.log(`[ElevenLabs] Dynamically selected premade voice: "${preferredVec?.name || premade[0].name}" (${cachedVoiceId})`);
+          return cachedVoiceId;
+        }
+      }
+    } catch (err) {
+      console.warn("Error fetching ElevenLabs voices list:", err);
     }
 
-    // Absolute fallback: return original texts
-    res.json({ translated: texts });
+    // Stable, guaranteed premade voice ID (Bella)
+    return "EXAVITQu4vr4xnSDxMaL";
+  };
+
+  // Helper to generate TTS using ElevenLabs
+  const generateElevenLabsTTS = async (text: string): Promise<string> => {
+    const apiKey = process.env.API_Key_Eleven || process.env.API_KEY_ELEVEN || process.env.ELEVEN_API_KEY;
+    if (!apiKey) {
+      throw new Error("ElevenLabs API Key (API_Key_Eleven) is missing. Set it in Secrets.");
+    }
+
+    const cleanedText = cleanTranslationText(text);
+    if (!cleanedText) {
+      console.log("[ElevenLabs] Text became empty after sanitization. Returning empty audio representation.");
+      return "";
+    }
+
+    const voiceId = await getElevenLabsVoiceId(apiKey);
+    const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "xi-api-key": apiKey,
+        "Content-Type": "application/json",
+        "accept": "audio/mpeg"
+      },
+      body: JSON.stringify({
+        text: cleanedText,
+        model_id: "eleven_multilingual_v2",
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75,
+          style: 0.05,
+          use_speaker_boost: true
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`ElevenLabs API returned status ${response.status}: ${errorText}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    return buffer.toString("base64");
+  };
+
+  // API Route for combined Translation + TTS to reduce latency
+  app.post("/api/ai/fast-tts", async (req, res) => {
+    const { text, targetLanguage, langCode } = req.body;
+    if (!text || !targetLanguage || !langCode) return res.status(400).json({ error: "Missing required fields" });
+
+    try {
+      const startTime = Date.now();
+      
+      // 1. Translate (unless already in target code)
+      let textToSpeak = text;
+      // Preprocess technical words before translation so automated translators don't fail (e.g., translating "Part No" to "נ"צ")
+      if (langCode !== 'en' && /[a-zA-Z]/.test(textToSpeak)) {
+        textToSpeak = textToSpeak
+          .replace(/\bPart\s*No\.?\s*:/gi, "Part Number:")
+          .replace(/\bPart\s*No\.?\b/gi, "Part Number")
+          .replace(/\bPart\s*Number\s*:/gi, "Part Number:")
+          .replace(/\bP\/?N\s*:/gi, "Part Number:")
+          .replace(/\bP\s*N\s*:/gi, "Part Number:")
+          .replace(/\bP\.N\.\s*:/gi, "Part Number:")
+          .replace(/\bPart\s*ID\s*:/gi, "Part Number:")
+          .replace(/\bPart\s*ID\b/gi, "Part Number")
+          .replace(/\bOEM\s*:/gi, "OEM Manufacturer:")
+          .replace(/\bOEM\b/gi, "OEM Manufacturer");
+      }
+      const isHebrew = langCode === 'he';
+      const isArabic = langCode === 'ar';
+      const isRussian = langCode === 'ru';
+      const hasHebrew = /[\u0590-\u05FF]/.test(text);
+      const hasArabic = /[\u0600-\u06FF]/.test(text);
+      const hasRussian = /[\u0400-\u04FF]/.test(text);
+      const hasLatin = /[a-zA-Z]/.test(text);
+
+      const ai = getAI();
+      const needsTranslation = (langCode !== 'en' && hasLatin) || (isHebrew && !hasHebrew) || (isArabic && !hasArabic) || (isRussian && !hasRussian);
+
+      if (needsTranslation && ai) {
+        const transPrompt = `Translate this text to ${targetLanguage}. Return ONLY the direct translation. Do NOT include any explanations, surrounding quotes, markdown formatting, or introductory text. If there are technical parts or measurements, translate them naturally so they can be read aloud comfortably. Text: "${text}"`;
+        const transResult = await ai.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: [{ role: "user", parts: [{ text: transPrompt }] }]
+        });
+        textToSpeak = cleanTranslationText(transResult.text || text);
+        console.log(`[FAST-TTS] Translation succeeded: "${text}" -> "${textToSpeak}"`);
+      }
+
+      // 2. TTS Generation (EXCLUSIVE to ElevenLabs)
+      const ttsStartTime = Date.now();
+      let audioBase64 = "";
+
+      try {
+        audioBase64 = await generateElevenLabsTTS(textToSpeak);
+      } catch (elevenErr: any) {
+        console.error(`[FAST-TTS] ElevenLabs audio generation failed: ${elevenErr.message || elevenErr}`);
+        return res.status(500).json({ error: "ElevenLabs Generation failed", details: elevenErr.message || String(elevenErr) });
+      }
+
+      console.log(`[FAST-TTS] Total time: ${Date.now() - startTime}ms (ElevenLabs TTS portion: ${Date.now() - ttsStartTime}ms)`);
+
+      if (audioBase64 !== undefined) {
+        res.json({ audio: audioBase64, translatedText: textToSpeak });
+      } else {
+        res.status(500).json({ error: "No audio generated from ElevenLabs" });
+      }
+    } catch (err: any) {
+      console.error("Fast TTS Error:", err);
+      res.status(500).json({ error: "Fast TTS failed", details: err.message || String(err) });
+    }
   });
 
   // API Route for TTS
   app.post("/api/ai/tts", async (req, res) => {
-    const { text, langCode } = req.body;
+    const { text } = req.body;
     if (!text) return res.status(400).json({ error: "text is required" });
 
-    if (isGeminiQuotaExceeded) {
-      return res.status(429).json({ error: "TTS quota exceeded or credits depleted. Falling back to native speech automatically." });
-    }
-
-    const ai = getAI();
-    if (!ai) return res.status(500).json({ error: "Gemini API not configured" });
-
+    const startTime = Date.now();
     try {
-      const hint = langCode === 'he' ? `Speak this Hebrew text clearly: ${text}` : 
-                 langCode === 'ar' ? `Speak this Arabic text clearly: ${text}` : text;
+      // EXCLUSIVE to ElevenLabs, no fallbacks to Google's TTS
+      const audioBase64 = await generateElevenLabsTTS(text);
+      console.log(`[TTS] ElevenLabs generated in ${Date.now() - startTime}ms for text length: ${text.length}`);
 
-      const modelName = "gemini-3.1-flash-tts-preview";
-      const result = await ai.models.generateContent({
-        model: modelName,
-        contents: [{ role: "user", parts: [{ text: hint }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: 'Kore' 
-              },
-            },
-          },
-        },
-      });
-
-      const audioBase64 = result.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
-
-      if (audioBase64) {
+      if (audioBase64 !== undefined) {
         res.json({ audio: audioBase64 });
       } else {
-        console.error("No audio content in Gemini 3.1 response:", JSON.stringify(result).substring(0, 500));
-        res.status(500).json({ error: "No audio generated", details: "Response did not contain audio data" });
+        res.status(500).json({ error: "No audio generated from ElevenLabs" });
       }
     } catch (err: any) {
       console.error("TTS API Error:", err);
-      const errMsg = err?.message || String(err);
-      if (errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("depleted") || errMsg.includes("credits")) {
-        isGeminiQuotaExceeded = true;
-        console.warn("⚠️ [TTS] Gemini API credits are depleted or quota is exhausted. Automatically switching to native speech on client-side for zero-latency gameplay.");
-      }
-      res.status(500).json({ error: "TTS failed", detail: err.message });
+      res.status(500).json({ error: "TTS failed", details: err.message || String(err) });
     }
   });
 
@@ -1795,6 +1357,14 @@ ${JSON.stringify(uniqueValidTexts)}`;
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    console.log("=== API CONFIGURATION DIAGNOSTICS ===");
+    const hasTranslateKey = !!(process.env.GOOGLE_TRANSLATE_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY);
+    const hasElevenKey = !!(process.env.API_Key_Eleven || process.env.API_KEY_ELEVEN || process.env.ELEVEN_API_KEY);
+    const hasGeminiKey = !!(process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY);
+    console.log(`- Google Translate API Key: ${hasTranslateKey ? "CONFIGURED (OK)" : "MISSING ⚠️"}`);
+    console.log(`- ElevenLabs API Key: ${hasElevenKey ? "CONFIGURED (OK)" : "MISSING ⚠️"}`);
+    console.log(`- Gemini API Key: ${hasGeminiKey ? "CONFIGURED (OK)" : "MISSING ⚠️"}`);
+    console.log("=====================================");
   });
 }
 

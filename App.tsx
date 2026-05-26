@@ -61,6 +61,7 @@ const App: React.FC = () => {
   const [isFetchingDetails, setIsFetchingDetails] = useState(false);
   const [language, setLanguage] = useState<Language>('en');
   const [productDetails, setProductDetails] = useState<{ 
+    productId?: string,
     title: string, 
     description: string, 
     originalTitle: string, 
@@ -70,6 +71,7 @@ const App: React.FC = () => {
   const [productTitles, setProductTitles] = useState<Record<string, string>>({});
   const [translatedSelectedModelName, setTranslatedSelectedModelName] = useState<string>('');
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+  const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' } | null>(null);
   const t = translations[language];
 
   useEffect(() => {
@@ -77,6 +79,17 @@ const App: React.FC = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  const loggedViewProductIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   const selectedModel = models.find(m => m.id === selectedId);
 
@@ -226,12 +239,21 @@ const App: React.FC = () => {
                   if (result) {
                     const apiTitle = result.productTitle || result.title || result.name || selectedModel.name;
                     const desc = result.productDescription || result.description || '';
+                    const pId = result.productId || result.ProductId || result.id || '';
+                    
+                    if (pId && loggedViewProductIdRef.current !== pId) {
+                      // Trigger view tracker API only once
+                      loggedViewProductIdRef.current = pId;
+                      fetch(`/api/products/${pId}/view`, { method: 'PUT' })
+                        .catch(err => console.error('Error auto-logging view trigger:', err));
+                    }
                     
                     // Store title for sidebar and catalog consistency
                     const normalizedName = selectedModel.name.trim().toLowerCase();
                     setProductTitles(prev => ({ ...prev, [normalizedName]: apiTitle }));
                     
                     setProductDetails({
+                      productId: pId,
                       title: apiTitle,
                       description: desc,
                       originalTitle: apiTitle,
@@ -264,11 +286,12 @@ const App: React.FC = () => {
       };
       fetchProductDetails();
     } else {
+      loggedViewProductIdRef.current = null;
       setProductDetails(null);
       setIsFetchingDetails(false);
       setIsProductInfoOpen(false);
     }
-  }, [selectedModel]);
+  }, [selectedId, selectedModel?.name]);
 
   // Translate product info when language changes
   useEffect(() => {
@@ -1764,6 +1787,12 @@ const App: React.FC = () => {
           </div>
         </div>,
         document.body
+      )}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10000] px-6 py-3.5 bg-zinc-900 border border-white/10 text-white rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5 duration-300">
+          <div className="w-2 h-2 rounded-full bg-yellow-500 animate-ping"></div>
+          <span className="text-[12px] font-black tracking-wide leading-none">{toast.message}</span>
+        </div>
       )}
     </div>
   );

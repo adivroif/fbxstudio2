@@ -37,6 +37,59 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [translatedModels, setTranslatedModels] = React.useState<Record<string, { name: string, description: string }>>({});
   const [translatedCategories, setTranslatedCategories] = React.useState<Record<string, string>>({});
 
+  const [productIds, setProductIds] = React.useState<Record<string, string>>({});
+  const [likesCounts, setLikesCounts] = React.useState<Record<string, number>>({});
+  const [viewsCounts, setViewsCounts] = React.useState<Record<string, number>>({});
+  const [likedProducts, setLikedProducts] = React.useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('liked_products_map');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const toggleLike = async (e: React.MouseEvent, productName: string) => {
+    e.stopPropagation();
+    const normalizedName = productName.trim().toLowerCase();
+    const pId = productIds[normalizedName];
+    if (!pId) {
+      console.warn(`Cannot like/dislike: NO productId found for ${productName}`);
+      return;
+    }
+
+    const currentlyLiked = !!likedProducts[normalizedName];
+    const newLikedState = !currentlyLiked;
+    
+    // Update local state and localStorage
+    const updatedLikes = { ...likedProducts, [normalizedName]: newLikedState };
+    setLikedProducts(updatedLikes);
+    localStorage.setItem('liked_products_map', JSON.stringify(updatedLikes));
+
+    // Optimistic UI updates
+    setLikesCounts(prev => ({
+      ...prev,
+      [normalizedName]: Math.max(0, (prev[normalizedName] ?? 0) + (newLikedState ? 1 : -1))
+    }));
+
+    // Send API Call
+    const endpoint = `/api/products/${pId}/${newLikedState ? 'like' : 'dislike'}`;
+    try {
+      console.log(`Sending like trigger to: ${endpoint}`);
+      const res = await fetch(endpoint, { method: 'PUT' });
+      if (res.ok) {
+        console.log(`Successfully sent ${newLikedState ? 'like' : 'dislike'} for ${productName}`);
+        const updatedProduct = await res.json();
+        const serverLikes = updatedProduct.likesCount ?? updatedProduct.LikesCount ?? 0;
+        setLikesCounts(prev => ({ ...prev, [normalizedName]: serverLikes }));
+      } else {
+        console.error(`Failed to send like update for ${productName}`);
+      }
+    } catch (err) {
+      console.error(`Error sending like update for ${productName}:`, err);
+    }
+  };
+
   const [hoveredProduct, setHoveredProduct] = React.useState<{
     name: string;
     description: string;
@@ -85,6 +138,17 @@ const Sidebar: React.FC<SidebarProps> = ({
             if (result) {
               const apiTitle = result.productTitle || result.title || result.name || '';
               const desc = result.productDescription || result.description || '';
+              
+              const pId = result.productId || result.id || result.ProductId;
+              if (pId) {
+                setProductIds(prev => ({ ...prev, [normalizedName]: String(pId) }));
+              }
+
+              const likes = result.likesCount ?? result.LikesCount ?? 0;
+              setLikesCounts(prev => ({ ...prev, [normalizedName]: likes }));
+
+              const views = result.viewsCount ?? result.ViewsCount ?? 0;
+              setViewsCounts(prev => ({ ...prev, [normalizedName]: views }));
               
               if (apiTitle) {
                 setApiTitles(prev => ({ ...prev, [normalizedName]: apiTitle }));
@@ -472,11 +536,30 @@ const Sidebar: React.FC<SidebarProps> = ({
                         </div>
 
                         <div className="flex flex-col gap-1 min-w-0 flex-1">
-                          <span className={`text-[12px] font-black uppercase tracking-wider transition-colors leading-tight ${
-                            isOutOfStock ? 'text-zinc-400 line-through decoration-red-500/50 decoration-2' : 'text-zinc-800 group-hover:text-yellow-600'
-                          }`}>
-                            {displayName}
-                          </span>
+                          <div className="flex items-start justify-between gap-1 w-full">
+                            <span className={`text-[12px] font-black uppercase tracking-wider transition-colors leading-tight ${
+                              isOutOfStock ? 'text-zinc-400 line-through decoration-red-500/50 decoration-2' : 'text-zinc-800 group-hover:text-yellow-600'
+                            }`}>
+                              {displayName}
+                            </span>
+                            
+                            {/* Like Emoji Button */}
+                            {productIds[normalizedName] && (
+                              <button
+                                onClick={(e) => toggleLike(e, originalDisplayName)}
+                                className="p-1 hover:bg-black/5 rounded-full transition-all focus:outline-none shrink-0"
+                                title={likedProducts[normalizedName] ? 'הסר לייק' : 'לייק'}
+                              >
+                                <span className={`inline-block text-[14px] transition-all duration-300 ${
+                                  likedProducts[normalizedName] 
+                                    ? 'scale-[1.2] filter-none opacity-100 animate-pulse' 
+                                    : 'opacity-40 grayscale hover:opacity-80 scale-100'
+                                }`}>
+                                  ❤️
+                                </span>
+                              </button>
+                            )}
+                          </div>
                           {description && (
                             <p className="text-[11px] text-zinc-500 font-medium leading-relaxed line-clamp-3">
                               {description}
@@ -582,11 +665,30 @@ const Sidebar: React.FC<SidebarProps> = ({
                               </div>
 
                               <div className="flex flex-col gap-1 min-w-0 flex-1">
-                                <span className={`text-[12px] font-black uppercase tracking-wider transition-colors leading-tight ${
-                                  isOutOfStock ? 'text-zinc-400 line-through decoration-red-500/50 decoration-2' : 'text-zinc-800 group-hover:text-yellow-600'
-                                }`}>
-                                  {displayName}
-                                </span>
+                                <div className="flex items-start justify-between gap-1 w-full">
+                                  <span className={`text-[12px] font-black uppercase tracking-wider transition-colors leading-tight ${
+                                    isOutOfStock ? 'text-zinc-400 line-through decoration-red-500/50 decoration-2' : 'text-zinc-800 group-hover:text-yellow-600'
+                                  }`}>
+                                    {displayName}
+                                  </span>
+                                  
+                                  {/* Like Emoji Button */}
+                                  {productIds[normalizedName] && (
+                                    <button
+                                      onClick={(e) => toggleLike(e, originalDisplayName)}
+                                      className="p-1 hover:bg-black/5 rounded-full transition-all focus:outline-none shrink-0"
+                                      title={likedProducts[normalizedName] ? 'הסר לייק' : 'לייק'}
+                                    >
+                                      <span className={`inline-block text-[14px] transition-all duration-300 ${
+                                        likedProducts[normalizedName] 
+                                          ? 'scale-[1.2] filter-none opacity-100 animate-pulse' 
+                                          : 'opacity-40 grayscale hover:opacity-80 scale-100'
+                                      }`}>
+                                        ❤️
+                                      </span>
+                                    </button>
+                                  )}
+                                </div>
                                 {description && (
                                   <p className="text-[11px] text-zinc-500 font-medium leading-relaxed line-clamp-3">
                                     {description}
