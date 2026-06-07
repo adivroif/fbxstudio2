@@ -6,6 +6,7 @@ import { OrbitControls, PerspectiveCamera, Environment, Float, Html, Center } fr
 import * as THREE from 'three';
 import './types';
 import FBXModel from './components/FBXModel';
+import { ModelErrorBoundary } from './components/ModelErrorBoundary';
 import Sidebar from './components/Sidebar';
 import CameraControls from './components/CameraControls';
 import { MaterialSettings, SceneModelInstance, ModelPart, ColorVariant, TextureSet } from './types';
@@ -46,6 +47,36 @@ const CameraHandler: React.FC<{
   return null;
 };
 
+const isModelTextureMatch = (fileName: string, modelName: string): boolean => {
+  if (!fileName || !modelName) return false;
+
+  // 1. Remove standard extensions from ends of names before comparison
+  const cleanExtension = (str: string) => {
+    return str.replace(/\.(fbx|obj|gltf|glb|png|jpg|jpeg|webp|tga|dds|gif|bmp|tiff)$/i, '').trim();
+  };
+
+  const fNameNoExt = cleanExtension(fileName);
+  const mNameNoExt = cleanExtension(modelName);
+
+  // 2. Normalize by converting to lowercase and replacing word separators with single underscore
+  const normalize = (str: string) => {
+    return str.toLowerCase().trim().replace(/[\s\-_.]+/g, '_');
+  };
+
+  const fNorm = normalize(fNameNoExt);
+  const mNorm = normalize(mNameNoExt);
+
+  // 3. Verify that the texture base name starts with the model base name
+  if (!fNorm.startsWith(mNorm)) return false;
+
+  // 4. Ensure word boundary matching to avoid substrings like 'Desk' matching 'Desktop'
+  const nextChar = fNorm.charAt(mNorm.length);
+  if (!nextChar) return true; // exact match
+
+  const isAlphanumeric = /[a-z0-9]/.test(nextChar);
+  return !isAlphanumeric;
+};
+
 const App: React.FC = () => {
   const [models, setModels] = useState<SceneModelInstance[]>([]);
   const [catalogFiles, setCatalogFiles] = useState<any[]>([]);
@@ -72,6 +103,10 @@ const App: React.FC = () => {
   const [translatedSelectedModelName, setTranslatedSelectedModelName] = useState<string>('');
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' } | null>(null);
+  const [uvLayoutSvg, setUvLayoutSvg] = useState<string>('');
+  const [uvLayoutFilename, setUvLayoutFilename] = useState<string>('');
+  const [partUVMaps, setPartUVMaps] = useState<Record<string, { svg: string; filename: string }>>({});
+  const [inspectedUVPart, setInspectedUVPart] = useState<{ name: string; svg: string; filename: string } | null>(null);
   const t = translations[language];
 
   useEffect(() => {
@@ -106,7 +141,7 @@ const App: React.FC = () => {
           const folder = 'images';
           const modelName = model.name;
           const clientName = 'tenantB';
-          const response = await fetch(`/api/files/get-images-by-model?folder=${encodeURIComponent(folder)}&modelName=${encodeURIComponent(modelName)}&clientName=${clientName}`);
+          const response = await fetch(`/api/files/get-images-by-model?folder=${encodeURIComponent(folder)}&modelName=${encodeURIComponent(modelName)}&clientName=${clientName}&v=3`);
           if (!response.ok) {
             fetchingModels.current.delete(model.id);
             return;
@@ -147,7 +182,7 @@ const App: React.FC = () => {
     const fetchCatalog = async () => {
       setIsLoadingCatalog(true);
       try {
-        const response = await fetch('/api/files/get-files?folder=tenants&clientName=tenantB');
+        const response = await fetch('/api/files/get-files?folder=tenants&clientName=tenantB&v=3');
         if (response.ok) {
           const rawData = await response.json();
           const getListData = (raw: any) => {
@@ -163,7 +198,7 @@ const App: React.FC = () => {
               if (typeof item === 'string') return { key: item, name: item, url: item };
               const name = item.fileName || item.FileName || item.filename || item.Name || item.name || "";
               const key = item.fullPath || item.FullPath || item.fullpath || item.Key || item.item_key || item.key || name || "";
-              const url = `/api/files/get-file?folder=tenants&clientName=tenantB&fileName=${encodeURIComponent(name)}`;
+              const url = `/api/files/get-file?folder=tenants&clientName=tenantB&fileName=${encodeURIComponent(name)}&v=3`;
               return { key, name, url };
             })
             .filter((f: any) => f.name.toLowerCase().endsWith(".fbx") || f.key.toLowerCase().endsWith(".fbx"));
@@ -181,7 +216,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const fetchTextures = async () => {
       try {
-        const response = await fetch('/api/files/get-files?folder=images&clientName=tenantB');
+        const response = await fetch('/api/files/get-files?folder=images&clientName=tenantB&v=3');
         if (response.ok) {
           const raw = await response.json();
           const getListData = (r: any) => {
@@ -196,7 +231,7 @@ const App: React.FC = () => {
           const extracted = list.map((item: any) => {
             const name = item.fileName || item.FileName || item.filename || item.Name || item.name || item.Title || item.title || "";
             const key = item.fullPath || item.FullPath || item.fullpath || item.Key || item.item_key || item.key || item.FilePath || name || "";
-            const url = `/api/files/get-file?folder=images&clientName=tenantB&fileName=${encodeURIComponent(name)}`;
+            const url = `/api/files/get-file?folder=images&clientName=tenantB&fileName=${encodeURIComponent(name)}&v=3`;
             return { key, name, url };
           }).filter((f: any) => {
             const lowName = f.name.toLowerCase();
@@ -224,17 +259,25 @@ const App: React.FC = () => {
   }, [selectedId, selectedModel?.detectedMaterials.length]);
 
   useEffect(() => {
+    let active = true;
+    
+    // Clear old details immediately so we don't display stale info during loads!
+    setProductDetails(null);
+    setIsFetchingDetails(false);
+
     if (selectedModel) {
       const fetchProductDetails = async () => {
         setIsFetchingDetails(true);
         try {
-          const response = await fetch(`/api/product-details?modelName=${encodeURIComponent(selectedModel.name)}`);
+          const response = await fetch(`/api/product-details?modelName=${encodeURIComponent(selectedModel.name)}&v=3`);
+          if (!active) return;
           if (response.ok) {
             const text = await response.text();
+            if (!active) return;
             if (text && text.trim().length > 0) {
               try {
                 const data = JSON.parse(text);
-                if (data) {
+                if (data && active) {
                   const result = Array.isArray(data) ? data[0] : data;
                   if (result) {
                     const apiTitle = result.productTitle || result.title || result.name || selectedModel.name;
@@ -252,36 +295,38 @@ const App: React.FC = () => {
                     const normalizedName = selectedModel.name.trim().toLowerCase();
                     setProductTitles(prev => ({ ...prev, [normalizedName]: apiTitle }));
                     
-                    setProductDetails({
-                      productId: pId,
-                      title: apiTitle,
-                      description: desc,
-                      originalTitle: apiTitle,
-                      originalDescription: desc,
-                      linkTo: result.linkTo
-                    });
-                    
-                    // Auto-open on large screens only
-                    if (window.innerWidth >= 1024) {
-                      setIsProductInfoOpen(true);
+                    if (active) {
+                      setProductDetails({
+                        productId: pId,
+                        title: apiTitle,
+                        description: desc,
+                        originalTitle: apiTitle,
+                        originalDescription: desc,
+                        linkTo: result.linkTo
+                      });
+                      
+                      // Auto-open on large screens only
+                      if (window.innerWidth >= 1024) {
+                        setIsProductInfoOpen(true);
+                      }
                     }
                   }
                 }
               } catch (parseErr) {
                 console.error('Failed to parse product details JSON:', parseErr);
-                setProductDetails(null);
+                if (active) setProductDetails(null);
               }
             } else {
-              setProductDetails(null);
+              if (active) setProductDetails(null);
             }
           } else {
-            setProductDetails(null);
+            if (active) setProductDetails(null);
           }
         } catch (error) {
           console.error('Failed to fetch product details:', error);
-          setProductDetails(null);
+          if (active) setProductDetails(null);
         } finally {
-          setIsFetchingDetails(false);
+          if (active) setIsFetchingDetails(false);
         }
       };
       fetchProductDetails();
@@ -291,6 +336,10 @@ const App: React.FC = () => {
       setIsFetchingDetails(false);
       setIsProductInfoOpen(false);
     }
+
+    return () => {
+      active = false;
+    };
   }, [selectedId, selectedModel?.name]);
 
   // Translate product info when language changes
@@ -334,6 +383,43 @@ const App: React.FC = () => {
 
   const [targetView, setTargetView] = useState<{ pos: THREE.Vector3, lookAt: THREE.Vector3 } | null>(null);
   const [environmentUrl, setEnvironmentUrl] = useState<string | null>(null);
+  const [envPreset, setEnvPreset] = useState<string>('sunset');
+  
+  const envPresetLabels = useMemo(() => ({
+    en: {
+      title: "Environment",
+      city: "City",
+      studio: "Studio",
+      warehouse: "Warehouse",
+      lobby: "Lobby",
+      sunset: "Sunset"
+    },
+    he: {
+      title: "תאורת סביבה",
+      city: "עירוני",
+      studio: "סטודיו נקי",
+      warehouse: "מחסן תעשייתי",
+      lobby: "לובי",
+      sunset: "שקיעה חמה"
+    },
+    ar: {
+      title: "إضاءة البيئة",
+      city: "شارع المدينة",
+      studio: "استوديو",
+      warehouse: "مستودع",
+      lobby: "ردهة",
+      sunset: "غروب الشمس"
+    },
+    ru: {
+      title: "Окружение",
+      city: "Город",
+      studio: "Студия",
+      warehouse: "Склад",
+      lobby: "Холл",
+      sunset: "Закат"
+    }
+  }), []);
+
   const [modelParts, setModelParts] = useState<ModelPart[]>([]);
   const [isFetchingParts, setIsFetchingParts] = useState(false);
   const [hoveredPartId, setHoveredPartId] = useState<string | null>(null);
@@ -345,6 +431,19 @@ const App: React.FC = () => {
   } | null>(null);
   const [translatedParts, setTranslatedParts] = useState<Record<string, { name: string, description: string }>>({});
   const [activePart, setActivePart] = useState<{ id: string, name: string, description: string, position?: THREE.Vector3, size?: THREE.Vector3, mesh?: THREE.Mesh } | null>(null);
+
+  // Synchronously reset parts, translatedParts, and productDetails during render when selectedId changes
+  // to prevent stale parts/descriptions of the previous model from "jumping in" or flashing in the UI.
+  const [prevSelectedId, setPrevSelectedId] = useState<string | null>(null);
+  if (selectedId !== prevSelectedId) {
+    setPrevSelectedId(selectedId);
+    setModelParts([]);
+    setTranslatedParts({});
+    setProductDetails(null);
+    setActivePart(null);
+    setIsFetchingParts(false);
+    setIsFetchingDetails(false);
+  }
 
   // Translate detected meshes when no modelParts are available
   useEffect(() => {
@@ -372,9 +471,12 @@ const App: React.FC = () => {
   const modelNameForFetch = selectedModelForFetch?.name;
   
   useEffect(() => {
+    let active = true;
+
     // Reset states for the new model immediately
     setModelParts([]);
     setTranslatedParts({});
+    setIsFetchingParts(false);
     
     // We prefer fetching parts based on the specific model filename first, 
     // as it's often more unique than the readable title.
@@ -389,17 +491,19 @@ const App: React.FC = () => {
       setIsFetchingParts(true);
       try {
         const response = await fetch(`/api/model-parts?modelName=${encodeURIComponent(searchName)}`);
+        if (!active) return;
         if (!response.ok) {
           console.warn(`Server responded with ${response.status} for model parts`);
-          setIsFetchingParts(false);
+          if (active) setIsFetchingParts(false);
           return;
         }
         const text = await response.text();
+        if (!active) return;
         if (text && (text.trim().startsWith('[') || text.trim().startsWith('{'))) { 
           try {
             const data = JSON.parse(text);
             const parts = Array.isArray(data) ? data : (data.parts || []);
-            if (parts.length > 0) {
+            if (parts.length > 0 && active) {
               setModelParts(parts);
               
               // Pre-translate descriptions in the background for current language
@@ -417,6 +521,7 @@ const App: React.FC = () => {
 
                   try {
                     const translatedResults = await translateBatch(textsToTranslate, langName);
+                    if (!active) return;
                     const newTranslatedParts: Record<string, { name: string, description: string }> = {};
                     
                     let resultIdx = 0;
@@ -426,7 +531,9 @@ const App: React.FC = () => {
                       newTranslatedParts[item.id] = { name: tName, description: tDesc };
                     });
                     
-                    setTranslatedParts(newTranslatedParts);
+                    if (active) {
+                      setTranslatedParts(newTranslatedParts);
+                    }
                   } catch (err) {
                     console.error("Initial batch part translation failed:", err);
                   }
@@ -443,11 +550,15 @@ const App: React.FC = () => {
       } catch (err) {
         console.error("Failed to fetch model parts from Azure API:", err)
       } finally {
-        setIsFetchingParts(false);
+        if (active) setIsFetchingParts(false);
       }
     };
 
     fetchModelParts();
+
+    return () => {
+      active = false;
+    };
   }, [selectedId, modelNameForFetch, productDetails?.originalTitle]);
 
   useEffect(() => {
@@ -505,7 +616,11 @@ const App: React.FC = () => {
     hoveredMaterial: null, isExploded: false, explodeFactor: 0,
     isPlayingAnimation: false,
     animationDirection: 'backward',
-    colorVariants: [], activeVariant: null
+    colorVariants: [], activeVariant: null,
+    flipY: true,
+    wireframe: false,
+    maxTextureSize: 4096,
+    anisotropy: 16
   });
 
   const handlePartClick = useCallback(async (part: { id: string, name: string, description: string, position: THREE.Vector3, size: THREE.Vector3, mesh: THREE.Mesh } | null) => {
@@ -728,12 +843,7 @@ const App: React.FC = () => {
           const modelNameBase = model.name.toLowerCase().split('.')[0];
           const cleanModelName = modelNameBase.replace(/[^a-z0-9]/g, '');
           
-          // Check if texture name starts with model name or contains it as a distinct word
-          const isPrefixMatch = texNameNoExt.startsWith(modelNameBase);
-          const isWordMatch = new RegExp(`(^|[\\s_\\d])${modelNameBase}([\\s_\\d]|$)`, 'i').test(texNameNoExt);
-          const isCleanMatch = cleanTexName.includes(cleanModelName);
-          
-          let isModelMatch = isPrefixMatch || isWordMatch || isCleanMatch;
+          let isModelMatch = isModelTextureMatch(texNameNoExt, modelNameBase);
 
           // Prevent "Axe" matching "AxeHead" if "AxeHead" is another model
           if (isModelMatch) {
@@ -750,56 +860,149 @@ const App: React.FC = () => {
           
           if (!isModelMatch) return null;
 
-          // Find part number - look for numbers that aren't part of the model name
-          const nameWithoutModel = texNameNoExt.replace(modelNameBase, '');
-          const texNumMatch = nameWithoutModel.match(/\d+/);
-          const texNum = texNumMatch ? texNumMatch[0] : null;
-
-          // Find target material
+          // ── SCORED MATERIAL MATCHING ──────────────────────────────────────
           let targetMat = null;
-          if (texNum !== null) {
-            const parsedTexNum = parseInt(texNum);
-            // Priority 1: Exact number match in material name
-            targetMat = sortedMaterials.find(m => {
-              const mNumMatch = m.match(/\d+/);
-              if (!mNumMatch) return false;
-              const mNum = parseInt(mNumMatch[0]);
-              return mNum === parsedTexNum;
-            });
+          let bestScore = -1;
+
+          const normalizeWord = (w: string) => {
+            let s = w.toLowerCase().trim();
+            if (s.startsWith('p')) {
+              if (s.startsWith('pgolden')) s = s.slice(1);
+              else if (s.startsWith('pgold')) s = s.slice(1);
+              else if (s.startsWith('psilvers')) s = s.slice(1);
+              else if (s.startsWith('psilver')) s = s.slice(1);
+              else if (s.startsWith('pwooden')) s = s.slice(1);
+              else if (s.startsWith('pblue')) s = s.slice(1);
+            }
+            return s
+              .replace(/golden/g, 'gold')
+              .replace(/silvers/g, 'silver')
+              .replace(/wooden/g, 'wood')
+              .replace(/handel/g, 'handle')
+              .replace(/middel/g, 'middle')
+              .replace(/colour/g, 'color');
+          };
+
+          const colorWords = [...colorNames, 'golden', 'silver', 'blue', 'gray', 'grey', 'yellow', 'wooden', 'wood', 'steel', 'metal', 'psilver', 'pblue', 'pgold', 'pgolden', 'pwooden'];
+
+          // Clean texture tokens - de-duplicate to avoid double matching single words
+          const texTokens = Array.from(new Set(
+            texNameNoExt
+              .split(/[\s_.-]+/)
+              .map((t: string) => normalizeWord(t))
+              .filter((t: string) => t && t !== cleanModelName && t !== 'png')
+          )) as string[];
+          const texTokensNoColor: string[] = texTokens.filter((t: string) => !colorWords.includes(t));
+
+          for (const mat of sortedMaterials) {
+            const cleanM = mat.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const matTokens = Array.from(new Set(
+              mat.toLowerCase()
+                .split(/[\s_.-]+/)
+                .map((t: string) => normalizeWord(t))
+                .filter((t: string) => t && t !== cleanModelName)
+            )) as string[];
+            const matTokensNoColor: string[] = matTokens.filter((t: string) => !colorWords.includes(t));
+
+            let score = 0;
+
+            // 1. Exact match
+            if (cleanM === cleanTexName) {
+              score += 1000;
+            }
+
+            // 2. Token overlap score
+            let matchedTokenCount = 0;
+            for (const tTok of texTokensNoColor) {
+              for (const mTok of matTokensNoColor) {
+                if (tTok === mTok) {
+                  matchedTokenCount++;
+                } else if (tTok.includes(mTok) || mTok.includes(tTok)) {
+                  if (tTok.length > 2 && mTok.length > 2) {
+                    matchedTokenCount += 0.5;
+                  }
+                }
+              }
+            }
+
+            let structuralMatches = matchedTokenCount * 50;
+            let densityBonus = 0;
+            if (matchedTokenCount > 0 && matTokensNoColor.length > 0) {
+              const density = Math.min(matchedTokenCount / matTokensNoColor.length, 1.0);
+              densityBonus = density * 150; 
+            }
+            score += structuralMatches + densityBonus;
+
+            // 2.5 Smart Agnostic Part-Matching (handles filtered-out model name edge cases)
+            const mapTypeKeywords = [
+              'basecolor', 'diffuse', 'albedo', 'color', 'bc', 'albedom', 'base_color', 'diffuse_color',
+              'normal', 'nor', 'nrm', 'bump', 'height', 'displacement', 'disp',
+              'metal', 'metallic', 'metalness', 'met', 'rough', 'roughness', 'rog', 'rough_metal', 'metalrough', 'orm',
+              'alpha', 'opacity', 'trans', 'mask', 'emissive', 'glow', 'selfillum',
+              'ao', 'occlusion', 'ambient', 'specular', 'spec'
+            ];
             
-            // Priority 2: Index match (1-based)
-            if (!targetMat) {
-              const idx = parsedTexNum - 1;
-              if (idx >= 0 && idx < sortedMaterials.length) targetMat = sortedMaterials[idx];
+            let cleanAgnosticTexName = cleanTexName;
+            mapTypeKeywords.forEach(kw => {
+              cleanAgnosticTexName = cleanAgnosticTexName.replace(kw, '');
+            });
+            cleanAgnosticTexName = cleanAgnosticTexName.replace(/_+/g, '');
+
+            const agnosticM = cleanM.replace(cleanModelName, '');
+            const agnosticT = cleanAgnosticTexName.replace(cleanModelName, '');
+
+            if (cleanM === cleanAgnosticTexName) {
+              score += 800;
+            } else if (agnosticM && agnosticT && agnosticM === agnosticT) {
+              score += 600;
+            } else if (cleanAgnosticTexName && cleanM && (cleanAgnosticTexName.includes(cleanM) || cleanM.includes(cleanAgnosticTexName))) {
+              score += 200;
+            }
+
+            // 3. Color matchmaking
+            const texColors = texTokens.filter((t: string) => colorWords.includes(t));
+            const matColors = matTokens.filter((t: string) => colorWords.includes(t));
+
+            let colorMismatch = false;
+            let colorMatch = false;
+
+            if (texColors.length > 0 && matColors.length > 0) {
+              const hasSharedColor = texColors.some((tc: string) => matColors.some((mc: string) => {
+                const c1 = tc.replace(/^p/i, '');
+                const c2 = mc.replace(/^p/i, '');
+                return c1 === c2 || c1.includes(c2) || c2.includes(c1);
+              }));
+
+              if (hasSharedColor) {
+                colorMatch = true;
+              } else {
+                colorMismatch = true;
+              }
+            }
+
+            if (colorMatch) score += 100;
+            if (colorMismatch) score -= 20;
+
+            // 4. Substring containment support
+            if (matchedTokenCount > 0) {
+              const mPart = cleanM.replace(cleanModelName, '');
+              const tPart = cleanTexName.replace(cleanModelName, '');
+              if (mPart && tPart) {
+                if (tPart.includes(mPart)) {
+                  score += 15;
+                } else if (mPart.includes(tPart)) {
+                  score += 10;
+                }
+              }
+            }
+
+            if (score > bestScore && score > 0) {
+              bestScore = score;
+              targetMat = mat;
             }
           }
-          
-          // Priority 3: Segment-based name match
-          if (!targetMat) {
-            const segments = texNameNoExt.split(/[\s_]/);
-            targetMat = sortedMaterials.find(m => {
-              const cleanM = m.toLowerCase().replace(/[^a-z0-9]/g, '');
-              // Check if any segment (that isn't the model name or a color) matches the material name
-              return segments.some(seg => {
-                if (seg === cleanModelName || colorNames.includes(seg)) return false;
-                return seg === cleanM || (cleanM.length > 2 && seg.length > 2 && (cleanM.includes(seg) || seg.includes(cleanM)));
-              });
-            });
-          }
 
-          // Priority 4: Original fuzzy match
-          if (!targetMat) {
-            targetMat = sortedMaterials.find(m => {
-              const cleanM = m.toLowerCase().replace(/[^a-z0-9]/g, '');
-              // Remove model name from material name to compare only the "part" part
-              const cleanMPart = cleanM.replace(cleanModelName, '');
-              const cleanTexPart = cleanTexName.replace(cleanModelName, '');
-              return (cleanMPart && cleanTexPart && (cleanTexPart.includes(cleanMPart) || cleanMPart.includes(cleanTexPart))) ||
-                     cleanTexName.includes(cleanM) || cleanM.includes(cleanTexName);
-            });
-          }
-
-          // Fallback: if only one material, everything matches it
+          // Absolute Fallback: if only one material, match it
           if (!targetMat && sortedMaterials.length === 1) {
             targetMat = sortedMaterials[0];
           }
@@ -851,73 +1054,124 @@ const App: React.FC = () => {
           matchesByType[type].push(m);
         });
 
-        Object.entries(matchesByType).forEach(([type, matches]) => {
-          // If there's only one texture of this type for the whole model, 
-          // apply it to ALL materials (Global Mapping)
-          if (matches.length === 1 && !matches[0].colorName) {
-            const m = matches[0];
-            sortedMaterials.forEach(matName => {
-              if (type === 'base') newSettings.materialMappings[matName] = m.tex.url;
-              else if (type === 'normal') newSettings.normalMappings[matName] = m.tex.url;
-              else if (type === 'metal') newSettings.metalMappings[matName] = m.tex.url;
-              else if (type === 'rough') newSettings.roughMappings[matName] = m.tex.url;
-              else if (type === 'alpha') newSettings.alphaMappings[matName] = m.tex.url;
-              else if (type === 'emissive') newSettings.emissiveMappings[matName] = m.tex.url;
-              else if (type === 'ao') newSettings.aoMappings[matName] = m.tex.url;
-              else if (type === 'height') newSettings.heightMappings[matName] = m.tex.url;
-              else if (type === 'specular') newSettings.specularMappings[matName] = m.tex.url;
-            });
+        // helper to check if a mapping exists for a material + type (either global or in variant)
+        const hasExistingMapping = (mat: string, type: string, colorName: string | null) => {
+          const isVariant = colorName && actualVariants.has(colorName);
+          if (isVariant) {
+            const v = variantsMap[colorName!];
+            if (!v) return false;
+            if (type === 'base') return !!v.mappings[mat];
+            if (type === 'normal') return !!v.normalMappings?.[mat];
+            if (type === 'metal') return !!v.metalMappings?.[mat];
+            if (type === 'rough') return !!v.roughMappings?.[mat];
+            if (type === 'alpha') return !!v.alphaMappings?.[mat];
+            if (type === 'emissive') return !!v.emissiveMappings?.[mat];
+            if (type === 'ao') return !!v.aoMappings?.[mat];
+            if (type === 'height') return !!v.heightMappings?.[mat];
+            if (type === 'specular') return !!v.specularMappings?.[mat];
+            return false;
           } else {
-            // If there are multiple, use the specific matching logic
-            matches.forEach((data: any) => {
-              const { tex, targetMat, colorName } = data;
-              
-              const isVariant = colorName && actualVariants.has(colorName);
-              const targetMaterials = targetMat ? [targetMat] : sortedMaterials;
+            if (type === 'base') return !!newSettings.materialMappings[mat];
+            if (type === 'normal') return !!newSettings.normalMappings[mat];
+            if (type === 'metal') return !!newSettings.metalMappings[mat];
+            if (type === 'rough') return !!newSettings.roughMappings[mat];
+            if (type === 'alpha') return !!newSettings.alphaMappings[mat];
+            if (type === 'emissive') return !!newSettings.emissiveMappings[mat];
+            if (type === 'ao') return !!newSettings.aoMappings[mat];
+            if (type === 'height') return !!newSettings.heightMappings[mat];
+            if (type === 'specular') return !!newSettings.specularMappings[mat];
+            return false;
+          }
+        };
 
-              if (isVariant) {
-                if (!variantsMap[colorName]) {
-                  variantsMap[colorName] = { 
-                    name: colorName, mappings: {}, normalMappings: {}, metalMappings: {}, roughMappings: {}, 
-                    alphaMappings: {}, emissiveMappings: {}, aoMappings: {}, heightMappings: {}, specularMappings: {} 
-                  };
+        const setMapping = (mat: string, type: string, url: string, colorName: string | null) => {
+          const isVariant = colorName && actualVariants.has(colorName);
+          if (isVariant) {
+            if (!variantsMap[colorName!]) {
+              variantsMap[colorName!] = { 
+                name: colorName!, mappings: {}, normalMappings: {}, metalMappings: {}, roughMappings: {}, 
+                alphaMappings: {}, emissiveMappings: {}, aoMappings: {}, heightMappings: {}, specularMappings: {} 
+              };
+            }
+            const v = variantsMap[colorName!];
+            if (type === 'base') {
+              v.mappings[mat] = url;
+              if (!newSettings.materialMappings[mat]) {
+                newSettings.materialMappings[mat] = url;
+                newSettings.activeVariant = colorName!;
+              }
+            } 
+            else if (type === 'normal') { if (!v.normalMappings) v.normalMappings = {}; v.normalMappings[mat] = url; }
+            else if (type === 'metal') { if (!v.metalMappings) v.metalMappings = {}; v.metalMappings[mat] = url; }
+            else if (type === 'rough') { if (!v.roughMappings) v.roughMappings = {}; v.roughMappings[mat] = url; }
+            else if (type === 'alpha') { if (!v.alphaMappings) v.alphaMappings = {}; v.alphaMappings[mat] = url; }
+            else if (type === 'emissive') { if (!v.emissiveMappings) v.emissiveMappings = {}; v.emissiveMappings[mat] = url; }
+            else if (type === 'ao') { if (!v.aoMappings) v.aoMappings = {}; v.aoMappings[mat] = url; }
+            else if (type === 'height') { if (!v.heightMappings) v.heightMappings = {}; v.heightMappings[mat] = url; }
+            else if (type === 'specular') { if (!v.specularMappings) v.specularMappings = {}; v.specularMappings[mat] = url; }
+          } else {
+            if (type === 'base') newSettings.materialMappings[mat] = url;
+            else if (type === 'normal') newSettings.normalMappings[mat] = url;
+            else if (type === 'metal') newSettings.metalMappings[mat] = url;
+            else if (type === 'rough') newSettings.roughMappings[mat] = url;
+            else if (type === 'alpha') newSettings.alphaMappings[mat] = url;
+            else if (type === 'emissive') newSettings.emissiveMappings[mat] = url;
+            else if (type === 'ao') newSettings.aoMappings[mat] = url;
+            else if (type === 'height') newSettings.heightMappings[mat] = url;
+            else if (type === 'specular') newSettings.specularMappings[mat] = url;
+          }
+        };
+
+        Object.entries(matchesByType).forEach(([type, matches]) => {
+          // 1. Separate matches into SPECIFIC parts vs GLOBAL fallbacks
+          const specificMatches = matches.filter(m => m.targetMat !== null);
+          const globalMatches = matches.filter(m => m.targetMat === null);
+
+          // 2. Apply all SPECIFIC matches first (so they take precedence and block global overrides!)
+          specificMatches.forEach((m: any) => {
+            const { tex, targetMat, colorName } = m;
+            setMapping(targetMat, type, tex.url, colorName);
+          });
+
+          // 3. Apply GLOBAL matches to any materials that don't have a mapping yet for this type
+          globalMatches.forEach((m: any) => {
+            const { tex, colorName } = m;
+            sortedMaterials.forEach((matName) => {
+              // Special case for alpha/opacity maps to prevent them from making solid parts disappear
+              if (type === 'alpha') {
+                const matLower = matName.toLowerCase();
+                const isAlphaMaterial = ['middle', 'glass', 'lens', 'trans', 'alpha', 'window', 'acrylic']
+                  .some(k => matLower.includes(k));
+                if (!isAlphaMaterial && sortedMaterials.length > 1) {
+                  // Skip this material as it should remain opaque
+                  return;
                 }
-                
-                targetMaterials.forEach(mat => {
-                  if (type === 'base') {
-                    variantsMap[colorName].mappings[mat] = tex.url;
-                    if (!newSettings.materialMappings[mat]) {
-                      newSettings.materialMappings[mat] = tex.url;
-                      newSettings.activeVariant = colorName;
-                    }
-                  } 
-                  else if (type === 'normal') variantsMap[colorName].normalMappings![mat] = tex.url;
-                  else if (type === 'metal') variantsMap[colorName].metalMappings![mat] = tex.url;
-                  else if (type === 'rough') variantsMap[colorName].roughMappings![mat] = tex.url;
-                  else if (type === 'alpha') variantsMap[colorName].alphaMappings![mat] = tex.url;
-                  else if (type === 'emissive') variantsMap[colorName].emissiveMappings![mat] = tex.url;
-                  else if (type === 'ao') variantsMap[colorName].aoMappings![mat] = tex.url;
-                  else if (type === 'height') variantsMap[colorName].heightMappings![mat] = tex.url;
-                  else if (type === 'specular') variantsMap[colorName].specularMappings![mat] = tex.url;
-                });
-              } else {
-                targetMaterials.forEach(mat => {
-                  if (type === 'base') newSettings.materialMappings[mat] = tex.url;
-                  else if (type === 'normal') newSettings.normalMappings[mat] = tex.url;
-                  else if (type === 'metal') newSettings.metalMappings[mat] = tex.url;
-                  else if (type === 'rough') newSettings.roughMappings[mat] = tex.url;
-                  else if (type === 'alpha') newSettings.alphaMappings[mat] = tex.url;
-                  else if (type === 'emissive') newSettings.emissiveMappings[mat] = tex.url;
-                  else if (type === 'ao') newSettings.aoMappings[mat] = tex.url;
-                  else if (type === 'height') newSettings.heightMappings[mat] = tex.url;
-                  else if (type === 'specular') newSettings.specularMappings[mat] = tex.url;
-                });
+              }
+              if (!hasExistingMapping(matName, type, colorName)) {
+                setMapping(matName, type, tex.url, colorName);
               }
             });
-          }
+          });
         });
 
         newSettings.colorVariants = Object.values(variantsMap);
+
+        // Ensure the active variant's mappings are applied to the active settings on initialization
+        if (newSettings.activeVariant) {
+          const activeVar = variantsMap[newSettings.activeVariant];
+          if (activeVar) {
+            newSettings.materialMappings = { ...newSettings.materialMappings, ...activeVar.mappings };
+            if (activeVar.normalMappings) newSettings.normalMappings = { ...newSettings.normalMappings, ...activeVar.normalMappings };
+            if (activeVar.metalMappings) newSettings.metalMappings = { ...newSettings.metalMappings, ...activeVar.metalMappings };
+            if (activeVar.roughMappings) newSettings.roughMappings = { ...newSettings.roughMappings, ...activeVar.roughMappings };
+            if (activeVar.alphaMappings) newSettings.alphaMappings = { ...newSettings.alphaMappings, ...activeVar.alphaMappings };
+            if (activeVar.emissiveMappings) newSettings.emissiveMappings = { ...newSettings.emissiveMappings, ...activeVar.emissiveMappings };
+            if (activeVar.aoMappings) newSettings.aoMappings = { ...newSettings.aoMappings, ...activeVar.aoMappings };
+            if (activeVar.heightMappings) newSettings.heightMappings = { ...newSettings.heightMappings, ...activeVar.heightMappings };
+            if (activeVar.specularMappings) newSettings.specularMappings = { ...newSettings.specularMappings, ...activeVar.specularMappings };
+          }
+        }
+
         return { ...model, settings: newSettings, detectedMaterials: materials };
       }));
     } catch (error) {
@@ -1248,8 +1502,11 @@ const App: React.FC = () => {
             antialias: true, 
             alpha: true,
             sortObjects: true,
-            logarithmicDepthBuffer: true
+            logarithmicDepthBuffer: false
           }} 
+          onCreated={({ gl }) => {
+            gl.debug.checkShaderErrors = false;
+          }}
           className="relative z-20"
           style={{ background: 'transparent' }}
           onPointerDown={() => { if (isMoveMode) setIsMoveMode(false); setTargetView(null); setActivePart(null); stopSpeaking(); }}
@@ -1273,36 +1530,58 @@ const App: React.FC = () => {
             {environmentUrl ? (
               <Environment files={environmentUrl} />
             ) : (
-              <Environment preset="city" />
+              <Environment preset={envPreset as any} />
             )}
             {models.map((model) => (
               <group key={model.id} position={model.position} onPointerDown={(e) => { e.stopPropagation(); if (selectedId !== model.id) setSelectedId(model.id); }}>
-                <FBXModel 
-                  url={model.url} 
-                  settings={model.settings} 
-                  textureSets={model.textureSets}
-                  modelParts={modelParts}
-                  activePartId={activePart?.id}
-                  onPartClick={handlePartClick}
-                  onMaterialsLoaded={(mats) => {
-                    updateModelData(model.id, { detectedMaterials: mats });
-                    if (model.detectedMaterials.length === 0) {
-                      autoMapTextures(model.id, mats);
-                    }
+                <ModelErrorBoundary
+                  modelName={model.name}
+                  language={language}
+                  onRetry={() => {
+                    console.log(`[ErrorBoundary Option] Retrying model load for: ${model.name}`);
+                    const freshUrl = model.url.includes('&v=')
+                      ? model.url.replace(/&v=\d+/, `&v=${Date.now()}`)
+                      : `${model.url}&v=${Date.now()}`;
+                    updateModelData(model.id, { url: freshUrl });
                   }}
-                  onMeshesLoaded={(meshes) => {
-                    updateModelData(model.id, { detectedMeshes: meshes });
-                  }} 
-                  onAnimationsDetected={(has) => {
-                    if (model.hasAnimations !== has) {
-                      updateModelData(model.id, { hasAnimations: has });
-                    }
-                  }}
-                  onAnimationFinished={handleAnimationFinished}
-                  translatedParts={translatedParts}
-                  isMobile={isMobile}
-                  hoveredPartId={hoveredPartId}
-              />
+                >
+                  <FBXModel 
+                    url={model.url} 
+                    settings={model.settings} 
+                    textureSets={model.textureSets}
+                    modelParts={modelParts}
+                    activePartId={activePart?.id}
+                    onPartClick={handlePartClick}
+                    onMaterialsLoaded={(mats) => {
+                      updateModelData(model.id, { detectedMaterials: mats });
+                      if (model.detectedMaterials.length === 0) {
+                        autoMapTextures(model.id, mats);
+                      }
+                    }}
+                    onMeshesLoaded={(meshes) => {
+                      updateModelData(model.id, { detectedMeshes: meshes });
+                    }} 
+                    onAnimationsDetected={(has) => {
+                      if (model.hasAnimations !== has) {
+                        updateModelData(model.id, { hasAnimations: has });
+                      }
+                    }}
+                    onAnimationFinished={handleAnimationFinished}
+                    translatedParts={translatedParts}
+                    isMobile={isMobile}
+                    hoveredPartId={hoveredPartId}
+                    onUVLayoutGenerated={(svg, filename) => {
+                      setUvLayoutSvg(svg);
+                      setUvLayoutFilename(filename);
+                    }}
+                    onPartUVLayoutGenerated={(meshName, svg, filename) => {
+                      setPartUVMaps(prev => ({
+                        ...prev,
+                        [meshName]: { svg, filename }
+                      }));
+                    }}
+                  />
+                </ModelErrorBoundary>
               </group>
             ))}
           </Suspense>
@@ -1310,6 +1589,7 @@ const App: React.FC = () => {
             ref={controlsRef} 
             makeDefault 
             enableDamping 
+            enablePan={false}
             minDistance={5} 
             maxDistance={500} 
             enabled={!isMoveMode} 
@@ -1499,6 +1779,10 @@ const App: React.FC = () => {
                                 const meshMatchTarget = part.partName || part.partKey || part.id;
                                 const isHovered = hoveredPartId === meshMatchTarget;
                                 
+                                // Filter catalogTextures to only those belonging to the currently selected model to prevent across-model mixups
+                                const selectedModelName = selectedModel?.name || '';
+                                const modelSpecificTextures = catalogTextures.filter(t => isModelTextureMatch(t.name, selectedModelName));
+                                
                                 // Find the matching model file
                                 const partNameForMatch = part.partName.toLowerCase().replace(/_/g, ' ').replace(/-/g, ' ').trim();
                                 const partKeyForMatch = (part.partKey || '').toLowerCase().replace(/_/g, ' ').replace(/-/g, ' ').trim();
@@ -1511,10 +1795,11 @@ const App: React.FC = () => {
                                 let partThumbnailUrl = '';
                                 if (match) {
                                   const modelBaseName = match.name.replace(/\.fbx$/i, '').toLowerCase();
-                                  const matchedTex = catalogTextures.find(t => {
+
+                                  const matchedTex = modelSpecificTextures.find(t => {
                                     const lowTex = t.name.toLowerCase();
                                     return lowTex.startsWith(modelBaseName) && lowTex.includes('preview');
-                                  }) || catalogTextures.find(t => t.name.toLowerCase().startsWith(modelBaseName));
+                                  }) || modelSpecificTextures.find(t => t.name.toLowerCase().startsWith(modelBaseName));
                                   if (matchedTex) {
                                     partThumbnailUrl = matchedTex.url;
                                   }
@@ -1524,10 +1809,10 @@ const App: React.FC = () => {
                                 if (!partThumbnailUrl) {
                                   const pName = part.partName.toLowerCase();
                                   const pKey = (part.partKey || '').toLowerCase();
-                                  const directTex = catalogTextures.find(t => {
+                                  const directTex = modelSpecificTextures.find(t => {
                                     const lowTex = t.name.toLowerCase();
                                     return (lowTex.startsWith(pName) || lowTex.startsWith(pKey)) && lowTex.includes('preview');
-                                  }) || catalogTextures.find(t => {
+                                  }) || modelSpecificTextures.find(t => {
                                     const lowTex = t.name.toLowerCase();
                                     return lowTex.startsWith(pName) || lowTex.startsWith(pKey);
                                   });
@@ -1673,7 +1958,7 @@ const App: React.FC = () => {
 
         {/* BOTTOM LEFT DESCRIPTION BOX */}
         {activePart && (
-          <div className={`absolute bottom-24 sm:bottom-6 left-6 z-50 w-[calc(100%-3rem)] sm:w-80 p-5 sm:p-6 bg-white/90 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_60px_rgba(0,0,0,0.2)] border border-white/40 animate-in slide-in-from-bottom-10 fade-in duration-500 max-h-[40vh] flex flex-col`} dir={isRTL ? 'rtl' : 'ltr'}>
+          <div className={`absolute bottom-24 sm:bottom-6 left-6 z-50 w-[calc(100%-3rem)] sm:w-80 p-5 sm:p-6 bg-white/95 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_60px_rgba(0,0,0,0.2)] border border-white/40 animate-in slide-in-from-bottom-10 fade-in duration-500 max-h-[70vh] flex flex-col`} dir={isRTL ? 'rtl' : 'ltr'}>
             <div className="flex items-center justify-between mb-3 sm:mb-4 shrink-0">
               <div className="flex flex-col">
                 <span className="text-[8px] font-black uppercase tracking-[0.3em] text-blue-600 leading-none mb-1">{t.partDetails}</span>
@@ -1694,10 +1979,55 @@ const App: React.FC = () => {
               </button>
             </div>
             <div className="h-[1px] w-full bg-zinc-100 mb-3 sm:mb-4 shrink-0"></div>
-            <div className="overflow-y-auto pr-2 no-scrollbar">
+            <div className="overflow-y-auto pr-2 no-scrollbar flex-1">
               <p className="text-xs sm:text-sm text-zinc-600 leading-relaxed font-medium">
                 {activePart.description || t.noDescription}
               </p>
+              
+              {activePart.mesh?.name && partUVMaps[activePart.mesh.name] && (() => {
+                const uvData = partUVMaps[activePart.mesh.name];
+                const labels = {
+                  en: { inspect: "Inspect UV Map", download: "Download UV" },
+                  he: { inspect: "הצג מפת UV", download: "הורד מפת UV" },
+                  ar: { inspect: "معاينة UV", download: "تحميل UV" },
+                  ru: { inspect: "Посмотреть UV", download: "Скачать UV" }
+                }[language] || { inspect: "Inspect UV Map", download: "Download UV" };
+
+                return (
+                  <div className="mt-4 pt-3 border-t border-zinc-100 flex flex-col gap-2 shrink-0">
+                    <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-zinc-400">UV WIREFRAME GRID</span>
+                    
+                    {/* Micro UV Inline Vector SVG Render Map */}
+                    <div 
+                      onClick={() => setInspectedUVPart({ name: activePart.name, svg: uvData.svg, filename: uvData.filename })}
+                      className="w-full h-24 bg-stone-950 border border-zinc-200/50 rounded-xl overflow-hidden relative cursor-pointer group hover:border-yellow-500 transition-all duration-300"
+                    >
+                      <div 
+                        className="w-full h-full p-2 opacity-80 group-hover:opacity-100 transition-opacity flex items-center justify-center [&_svg]:max-w-full [&_svg]:max-h-full [&_text]:hidden"
+                        dangerouslySetInnerHTML={{ __html: uvData.svg }}
+                      />
+                      <div className="absolute inset-0 bg-stone-900/40 backdrop-blur-[1px] opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-300">
+                        <span className="bg-white/95 text-stone-900 text-[10px] font-black tracking-wide uppercase px-3 py-1.5 rounded-full shadow-lg border border-black/5">
+                          {labels.inspect}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex">
+                      <button
+                        onClick={() => setInspectedUVPart({ name: activePart.name, svg: uvData.svg, filename: uvData.filename })}
+                        className="flex-1 py-1.5 px-3 bg-yellow-500 hover:bg-yellow-600 text-white font-black text-[10px] tracking-wide uppercase rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        {labels.inspect}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -1787,6 +2117,64 @@ const App: React.FC = () => {
           </div>
         </div>,
         document.body
+      )}
+      {inspectedUVPart && (
+        <div className="fixed inset-0 bg-stone-950/80 backdrop-blur-xl z-[9999] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-300">
+          <div className="bg-stone-900 border border-zinc-800 rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-[0_30px_80px_rgba(0,0,0,0.8)] flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-300" dir={isRTL ? 'rtl' : 'ltr'}>
+            
+            {/* Header */}
+            <div className="p-6 border-b border-zinc-800 flex items-center justify-between shrink-0">
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-500">
+                  {language === 'he' ? 'קואורדינטות UV מבודדות' : 'Isolated UV Coordinates Map'}
+                </span>
+                <h3 className="text-xl font-black text-white uppercase tracking-tight">
+                  {inspectedUVPart.name}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setInspectedUVPart(null)}
+                className="w-10 h-10 bg-zinc-800 hover:bg-zinc-750 text-zinc-400 hover:text-white rounded-full flex items-center justify-center transition-all"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* SVG Content Container */}
+            <div className="flex-1 bg-stone-950 p-6 flex items-center justify-center overflow-auto min-h-0 relative select-none">
+              <div 
+                className="w-full max-w-md aspect-square flex items-center justify-center [&_svg]:w-full [&_svg]:h-full border border-zinc-800/60 rounded-2xl p-4 bg-stone-900/40 relative shadow-inner"
+                dangerouslySetInnerHTML={{ __html: inspectedUVPart.svg }}
+              />
+            </div>
+
+            {/* Info and Actions Footer */}
+            <div className="p-6 border-t border-zinc-800 bg-stone-900/60 flex flex-col gap-4 shrink-0">
+              <div className="flex flex-col gap-1">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">
+                  {language === 'he' ? 'זיהוי UDIM והמלצת חומרים' : 'UDIM Tile & Material Recommendation'}
+                </span>
+                <p className="text-xs text-zinc-400 leading-relaxed font-normal">
+                  {language === 'he' 
+                    ? 'מפת ה-UV הזו נוצרה עבור חלק תלת-המימד הספציפי הזה ללא חפיפה. אנו ממליצים על טקסטורת PBR מרובעת מותאמת אישית ברזולוציית 2048x2048 לקבלת חדות מירבית.' 
+                    : 'This isolated UV map lets you target this mesh wireframe individually on its specific UDIM region. We recommend loading a high-detail custom PBR texture set (2048x2048 or higher) for optimal material representation.'}
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setInspectedUVPart(null)}
+                  className="px-5 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-stone-950 font-black text-xs tracking-wide uppercase rounded-xl transition-all shadow-lg"
+                >
+                  {language === 'he' ? 'סגור' : 'Close'}
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
       )}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10000] px-6 py-3.5 bg-zinc-900 border border-white/10 text-white rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5 duration-300">

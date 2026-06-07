@@ -36,6 +36,10 @@ export interface Translations {
   labelPartDescription: string;
   inStock: string;
   inStockCount: string;
+  flipY: string;
+  wireframe: string;
+  textureResolution?: string;
+  textureAnisotropy?: string;
 }
 
 export const translations: Record<Language, Translations> = {
@@ -74,6 +78,10 @@ export const translations: Record<Language, Translations> = {
     labelPartDescription: "Description",
     inStock: "In Stock",
     inStockCount: "Qty",
+    flipY: "Flip UV (Y-Axis)",
+    wireframe: "Wireframe mode",
+    textureResolution: "Texture Quality / Resolution",
+    textureAnisotropy: "Anisotropic Filtering (Sharpness)",
   },
   he: {
     all: "הכל",
@@ -110,6 +118,10 @@ export const translations: Record<Language, Translations> = {
     labelPartDescription: "תיאור",
     inStock: "במלאי",
     inStockCount: "כמות",
+    flipY: "היפוך ציר Y של הטקסטורה (UV)",
+    wireframe: "תצוגת רשת קווים (Wireframe)",
+    textureResolution: "איכות ורזולוציית טקסטורות",
+    textureAnisotropy: "סינון אנאיזוטרופי (חדות וטשטוש)",
   },
   ar: {
     all: "الكل",
@@ -146,6 +158,10 @@ export const translations: Record<Language, Translations> = {
     labelPartDescription: "وصف",
     inStock: "في المخزن",
     inStockCount: "الكمية",
+    flipY: "عكس الـ UV (محور Y)",
+    wireframe: "مظهر شبكي (Wireframe)",
+    textureResolution: "دقة وجودة الأنسجة",
+    textureAnisotropy: "تصفية تباين الاتجاهات (مستوى الحدوة)",
   },
   ru: {
     all: "Все",
@@ -182,5 +198,9 @@ export const translations: Record<Language, Translations> = {
     labelPartDescription: "Описание",
     inStock: "В наличии",
     inStockCount: "Кол-во",
+    flipY: "Зеркально UV (ось Y)",
+    wireframe: "Каркасный вид (Wireframe)",
+    textureResolution: "Качество и разрешение текстур",
+    textureAnisotropy: "Анизотропная фильтрация (Резкость)",
   },
 };

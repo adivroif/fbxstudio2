@@ -54,6 +54,10 @@ export interface MaterialSettings {
   colorVariants: ColorVariant[];
   activeVariant: string | null;
   targetPartId?: string | null;
+  flipY?: boolean;
+  wireframe?: boolean;
+  maxTextureSize?: number;
+  anisotropy?: number;
 }
 
 export interface MaterialMetadata {

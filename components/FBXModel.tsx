@@ -9,9 +9,155 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import '../types';
 import { MaterialSettings, ModelPart, TextureSet } from '../types';
 
+/**
+ * Automatically generates planar/box UV coordinates based on dominant normals for geometries that lack them
+ * or have dummy/corrupted UV coordinates (all zero or all identical) to prevent rendering them completely black.
+ */
+function ensureUVs(geometry: THREE.BufferGeometry) {
+  if (!geometry || !geometry.attributes) return;
+
+  const positionAttribute = geometry.attributes.position;
+  if (!positionAttribute) return;
+
+  const uvAttr = geometry.attributes.uv;
+  if (uvAttr && uvAttr.count > 0) return; // Always preserve original artist UV coordinates when present!
+
+  console.log(`[FBXModel] 🛠️ Generating missing UV coordinates for geometry`);
+  const count = positionAttribute.count;
+  const uvs = new Float32Array(count * 2);
+
+  // Compute bounding box to know the dimensions for normalization
+  if (!geometry.boundingBox) {
+    geometry.computeBoundingBox();
+  }
+  const bbox = geometry.boundingBox || new THREE.Box3();
+  const min = bbox.min;
+  const max = bbox.max;
+  
+  const width = Math.max(max.x - min.x, 0.0001);
+  const height = Math.max(max.y - min.y, 0.0001);
+  const depth = Math.max(max.z - min.z, 0.0001);
+
+  const normalAttr = geometry.attributes.normal;
+
+  for (let i = 0; i < count; i++) {
+    const x = positionAttribute.getX(i);
+    const y = positionAttribute.getY(i);
+    const z = positionAttribute.getZ(i);
+
+    // Default normal points up (along Y-axis)
+    let nx = 0, ny = 1, nz = 0;
+    if (normalAttr) {
+      nx = Math.abs(normalAttr.getX(i));
+      ny = Math.abs(normalAttr.getY(i));
+      nz = Math.abs(normalAttr.getZ(i));
+    }
+
+    let u = 0;
+    let v = 0;
+
+    // Smart tri-planar projection: select plane based on the dominant axis of the vertex normal
+    if (nx >= ny && nx >= nz) {
+      // Normal points mostly in X direction -> project on Y-Z plane
+      u = (y - min.y) / height;
+      v = (z - min.z) / depth;
+    } else if (ny >= nx && ny >= nz) {
+      // Normal points mostly in Y direction -> project on X-Z plane
+      u = (x - min.x) / width;
+      v = (z - min.z) / depth;
+    } else {
+      // Normal points mostly in Z direction -> project on X-Y plane
+      u = (x - min.x) / width;
+      v = (y - min.y) / height;
+    }
+
+    uvs[i * 2] = u;
+    uvs[i * 2 + 1] = v;
+  }
+
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  if (geometry.attributes.uv) {
+    geometry.attributes.uv.needsUpdate = true;
+  }
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Matching helpers
+// Matching & UDIM helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Detects the UDIM tile of a THREE.BufferGeometry based on its average UV coordinates.
+ * Returns a number matching standard UDIM format (1001-1100), or null if unable to detect.
+ */
+function detectUDIMTile(geometry: THREE.BufferGeometry): number | null {
+  if (!geometry || !geometry.attributes || !geometry.attributes.uv) {
+    return null;
+  }
+  const uv = geometry.attributes.uv;
+  if (uv.count === 0) return null;
+
+  let sumU = 0;
+  let sumV = 0;
+  let validCount = 0;
+  const sampleCount = Math.min(uv.count, 200);
+
+  for (let i = 0; i < sampleCount; i++) {
+    const u = uv.getX(i);
+    const v = uv.getY(i);
+    if (isNaN(u) || isNaN(v)) continue;
+    sumU += u;
+    sumV += v;
+    validCount++;
+  }
+
+  if (validCount === 0) return null;
+
+  const avgU = sumU / validCount;
+  const avgV = sumV / validCount;
+
+  // Standard UDIM tile calculation: 1001 + floor(u) + 10 * floor(v)
+  const floorU = Math.max(0, Math.floor(avgU));
+  const floorV = Math.max(0, Math.floor(avgV));
+
+  const tile = 1001 + floorU + (floorV * 10);
+  if (tile >= 1001 && tile <= 1100) {
+    return tile;
+  }
+  return null;
+}
+
+/**
+ * Extracts a UDIM tile ID (1001-1100) from a URL or filename string.
+ */
+function extractUDIMFromUrl(url: string | undefined): number | null {
+  if (!url) return null;
+  // Look for .1011. or _1011_ or similar UDIM markers in file name
+  const match = url.match(/[._-](10\d{2})[._-]/) || url.match(/(10\d{2})/);
+  if (match) {
+    const val = parseInt(match[1], 10);
+    if (val >= 1001 && val <= 1100) return val;
+  }
+  return null;
+}
+
+/**
+ * Extracts UDIM tile for a whole TextureSet by looking up any defined map URLs.
+ */
+function getTextureSetUDIM(set: TextureSet): number | null {
+  const mapKeys: Array<keyof TextureSet> = [
+    'baseColor', 'normal', 'metalness', 'roughness', 
+    'alpha', 'emissive', 'ao', 'height'
+  ];
+  for (const k of mapKeys) {
+    const val = set[k];
+    if (typeof val === 'string') {
+      const udim = extractUDIMFromUrl(val);
+      if (udim !== null) return udim;
+    }
+  }
+  return null;
+}
 
 /**
  * Returns true when `name` matches at least one pattern in `targets`.
@@ -31,33 +177,115 @@ function matchesAny(name: string, targets: string[]): boolean {
 
 /**
  * For a given mesh or material name, finds the best-matching TextureSet.
- * Priority: exact name > partial include > wildcard fallback.
+ * Priority: UDIM tile alignment > exact name > partial include > wildcard fallback.
  * Returns null when nothing matches.
  */
 function resolveBestSet(
   meshName: string,
   matName: string,
-  sets: TextureSet[]
+  sets: TextureSet[],
+  geometry?: THREE.BufferGeometry
 ): TextureSet | null {
-  // Score: 3 = exact match, 2 = substring, 1 = wildcard fallback, 0 = no match
   let best: TextureSet | null = null;
   let bestScore = 0;
 
+  const geomUDIM = geometry ? detectUDIMTile(geometry) : null;
+
+  const normalizeWord = (w: string) => {
+    let s = w.toLowerCase().trim();
+    if (s.startsWith('p')) {
+      if (s.startsWith('pgolden')) s = s.slice(1); // golden
+      else if (s.startsWith('pgold')) s = s.slice(1); // gold
+      else if (s.startsWith('psilvers')) s = s.slice(1); // silvers
+      else if (s.startsWith('psilver')) s = s.slice(1); // silver
+      else if (s.startsWith('pwooden')) s = s.slice(1); // wooden
+      else if (s.startsWith('pblue')) s = s.slice(1); // blue
+    }
+    s = s
+      .replace(/golden/g, 'gold')
+      .replace(/silvers/g, 'silver')
+      .replace(/wooden/g, 'wood')
+      .replace(/handel/g, 'handle')
+      .replace(/middel/g, 'middle')
+      .replace(/colour/g, 'color');
+    return s;
+  };
+
+  const getNormalizedWords = (name: string) => {
+    const rawWords = name
+      .replace(/([a-z])([A-Z])/g, '$1_$2') // Split camelCase
+      .split(/[\s\-_.]+/)
+      .map(w => w.trim().toLowerCase())
+      .filter(w => w !== '' && !/^\d+$/.test(w)); // omit digits
+    return rawWords.map(normalizeWord);
+  };
+
   for (const set of sets) {
     if (!set.targets || set.targets.length === 0) {
-      // Fallback bundle – only use when nothing better is found
-      if (bestScore === 0) { best = set; bestScore = 0; }
+      if (bestScore === 0) { best = set; bestScore = 0.1; }
       continue;
     }
+
+    const setUDIM = getTextureSetUDIM(set);
+
+    // CRITICAL: If UDIM tile mismatches, REJECT this candidate set immediately!
+    if (geomUDIM !== null && setUDIM !== null && geomUDIM !== setUDIM) {
+      continue;
+    }
+
     for (const candidate of [meshName, matName]) {
       const c = candidate.toLowerCase().trim();
+      const cNoDigits = c.replace(/\d+/g, '').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+
       for (const pattern of set.targets) {
         const p = pattern.toLowerCase().trim();
+        const pNoDigits = p.replace(/\d+/g, '').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+
         let score = 0;
-        if (c === p) score = 4;
-        else if (!p.includes('*') && (c.includes(p) || p.includes(c))) score = 3; 
-        else if (p.includes('*') && matchesAny(c, [p])) score = 2;
-        else if (p === '*') score = 1;
+        if (c === p || (cNoDigits && pNoDigits && cNoDigits === pNoDigits)) {
+          score = 4;
+        } else if (!p.includes('*') && (c.includes(p) || p.includes(c) || (cNoDigits && pNoDigits && (cNoDigits.includes(pNoDigits) || pNoDigits.includes(cNoDigits))))) {
+          const matchLen = p.length;
+          const wordBoundaryReward = c.includes(`_${p}`) || c.includes(`${p}_`) ? 0.2 : 0;
+          score = 3 + (matchLen / 100) + wordBoundaryReward;
+        } else if (p.includes('*') && (matchesAny(c, [p]) || (cNoDigits && pNoDigits && matchesAny(cNoDigits, [pNoDigits])))) {
+          score = 2;
+        } else if (p === '*') {
+          score = 1;
+        }
+
+        // ── Robust Word Overlap Fallback ──────────────────────────────────────
+        const cWords = getNormalizedWords(candidate);
+        const pWords = getNormalizedWords(pattern);
+        
+        if (cWords.length > 0 && pWords.length > 0) {
+          let overlapCount = 0;
+          for (const cw of cWords) {
+            if (pWords.includes(cw)) overlapCount++;
+          }
+          
+          if (overlapCount > 0) {
+            const overlapRatio = overlapCount / Math.max(cWords.length, 1);
+            const patternRatio = overlapCount / Math.max(pWords.length, 1);
+            
+            if (overlapRatio === 1 || patternRatio === 1) {
+              const overlapScore = 3.5 + (overlapCount / 20) + (overlapRatio * 0.1);
+              if (overlapScore > score) {
+                score = overlapScore;
+              }
+            } else if (overlapCount >= 2) {
+              const overlapScore = 3.1 + (overlapCount / 20) + (overlapRatio * 0.1);
+              if (overlapScore > score) {
+                score = overlapScore;
+              }
+            }
+          }
+        }
+
+        // Give a generous matching bonus if UDIM tiles perfectly align
+        if (geomUDIM !== null && setUDIM !== null && geomUDIM === setUDIM) {
+          score += 10.0;
+        }
 
         if (score > bestScore) {
           bestScore = score;
@@ -67,6 +295,231 @@ function resolveBestSet(
     }
   }
   return best;
+}
+
+/**
+ * Generates an elegant and high-fidelity SVG file showing the combined UDIM UV layouts
+ * of all meshes in the FBX model, color-coded by mesh.
+ */
+function generateUVSVG(group: THREE.Object3D): string {
+  const meshes: THREE.Mesh[] = [];
+  group.traverse((child) => {
+    if ((child as THREE.Mesh).isMesh) {
+      meshes.push(child as THREE.Mesh);
+    }
+  });
+
+  if (meshes.length === 0) return '';
+
+  const tileInfoList: {
+    meshName: string;
+    uvs: THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
+    tile: number;
+    triangles: [number, number, number][];
+  }[] = [];
+  const tilesSet = new Set<number>();
+
+  meshes.forEach((mesh) => {
+    const geometry = mesh.geometry;
+    if (!geometry || !geometry.attributes || !geometry.attributes.uv) return;
+    const uvAttr = geometry.attributes.uv as THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
+    if (uvAttr.count === 0) return;
+
+    const tile = detectUDIMTile(geometry) || 1001;
+    tilesSet.add(tile);
+
+    const triangles: [number, number, number][] = [];
+    const index = geometry.index;
+    if (index) {
+      for (let i = 0; i < index.count; i += 3) {
+        triangles.push([index.getX(i), index.getX(i + 1), index.getX(i + 2)]);
+      }
+    } else {
+      for (let i = 0; i < uvAttr.count; i += 3) {
+        triangles.push([i, i + 1, i + 2]);
+      }
+    }
+
+    tileInfoList.push({
+      meshName: mesh.name,
+      uvs: uvAttr,
+      tile,
+      triangles
+    });
+  });
+
+  if (tileInfoList.length === 0) return '';
+
+  const sortedTiles = Array.from(tilesSet).sort((a, b) => a - b);
+  const tileSize = 600;
+  const padding = 80;
+  const numGridCols = Math.min(sortedTiles.length, 3);
+  const numGridRows = Math.ceil(sortedTiles.length / numGridCols);
+
+  const svgWidth = numGridCols * (tileSize + padding) + padding;
+  const svgHeight = numGridRows * (tileSize + padding) + padding + 120; // Extra room for title at top
+
+  let svg = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n`;
+  svg += `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="background-color: #121214; font-family: sans-serif;">\n`;
+
+  // Draw elegant title
+  svg += `  <text x="40" y="50" fill="#facc15" font-size="28" font-weight="950" letter-spacing="1">AXE MODEL UV WIREFRAME LAYOUT MAP</text>\n`;
+  svg += `  <text x="40" y="80" fill="#71717a" font-size="14" font-weight="500">Auto-extracted from High-Fidelity 3D Assets • Standard UDIM coordinates</text>\n`;
+
+  sortedTiles.forEach((tile, tileIdx) => {
+    const colIdx = tileIdx % numGridCols;
+    const rowIdx = Math.floor(tileIdx / numGridCols);
+
+    const xOffset = padding + colIdx * (tileSize + padding);
+    const yOffset = 120 + padding + rowIdx * (tileSize + padding);
+
+    // Draw tile border frame
+    svg += `  <!-- TILE ${tile} FRAME -->\n`;
+    svg += `  <rect x="${xOffset}" y="${yOffset}" width="${tileSize}" height="${tileSize}" fill="#18181b" stroke="#3f3f46" stroke-width="2" rx="16" />\n`;
+    svg += `  <text x="${xOffset + 24}" y="${yOffset + 40}" fill="#22c55e" font-size="18" font-weight="800">UDIM ${tile}</text>\n`;
+
+    const tileInfos = tileInfoList.filter((info) => info.tile === tile);
+
+    const meshColors = [
+      '#3b82f6', // Bright Blue
+      '#f97316', // Orange
+      '#ec4899', // Pink
+      '#10b981', // Green
+      '#8b5cf6', // Violet
+      '#f59e0b', // Amber
+    ];
+
+    tileInfos.forEach((info, meshIdx) => {
+      const strokeColor = meshColors[meshIdx % meshColors.length];
+      svg += `  <!-- MESH: ${info.meshName} -->\n`;
+      svg += `  <g stroke="${strokeColor}" stroke-width="0.5" fill="none" opacity="0.65">\n`;
+
+      const uvs = info.uvs;
+      const totalTris = info.triangles.length;
+      const step = totalTris > 1000 ? Math.ceil(totalTris / 1000) : 1;
+
+      for (let i = 0; i < totalTris; i += step) {
+        const tri = info.triangles[i];
+        const u0 = uvs.getX(tri[0]);
+        const v0 = uvs.getY(tri[0]);
+        const u1 = uvs.getX(tri[1]);
+        const v1 = uvs.getY(tri[1]);
+        const u2 = uvs.getX(tri[2]);
+        const v2 = uvs.getY(tri[2]);
+
+        const tU0 = u0 - Math.floor(u0);
+        const tV0 = v0 - Math.floor(v0);
+        const tU1 = u1 - Math.floor(u1);
+        const tV1 = v1 - Math.floor(v1);
+        const tU2 = u2 - Math.floor(u2);
+        const tV2 = v2 - Math.floor(v2);
+
+        const x0 = xOffset + (tU0 * tileSize);
+        const y0 = yOffset + tileSize - (tV0 * tileSize);
+        const x1 = xOffset + (tU1 * tileSize);
+        const y1 = yOffset + tileSize - (tV1 * tileSize);
+        const x2 = xOffset + (tU2 * tileSize);
+        const y2 = yOffset + tileSize - (tV2 * tileSize);
+
+        svg += `    <polygon points="${x0.toFixed(1)},${y0.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}" />\n`;
+      }
+
+      svg += `  </g>\n`;
+      const legendY = yOffset + tileSize - 32 - (meshIdx * 20);
+      svg += `  <rect x="${xOffset + 24}" y="${legendY - 10}" width="12" height="12" fill="${strokeColor}" rx="3" />\n`;
+      svg += `  <text x="${xOffset + 44}" y="${legendY}" fill="#e4e4e7" font-size="11" font-weight="600">${info.meshName}</text>\n`;
+    });
+  });
+
+  svg += `</svg>\n`;
+  return svg;
+}
+
+/**
+ * Generates an elegant and high-fidelity SVG file showing the UV layout of a SINGLE mesh,
+ * fully isolated with zero overlaps from other meshes.
+ */
+function generateSingleMeshUVSVG(mesh: THREE.Mesh): string {
+  const geometry = mesh.geometry;
+  if (!geometry || !geometry.attributes || !geometry.attributes.uv) return '';
+  const uvAttr = geometry.attributes.uv as THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
+  if (uvAttr.count === 0) return '';
+
+  const tile = detectUDIMTile(geometry) || 1001;
+  const triangles: [number, number, number][] = [];
+  const index = geometry.index;
+  if (index) {
+    for (let i = 0; i < index.count; i += 3) {
+      triangles.push([index.getX(i), index.getX(i + 1), index.getX(i + 2)]);
+    }
+  } else {
+    for (let i = 0; i < uvAttr.count; i += 3) {
+      triangles.push([i, i + 1, i + 2]);
+    }
+  }
+
+  const tileSize = 600;
+  const padding = 80;
+  const svgWidth = tileSize + padding * 2;
+  const svgHeight = tileSize + padding * 2 + 120; // Extra room for title/legend at top
+
+  let svg = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n`;
+  svg += `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="background-color: #0c0a09; font-family: sans-serif;">\n`;
+
+  // Draw elegant title
+  const partNameUpper = mesh.name.toUpperCase() || 'PART';
+  svg += `  <text x="40" y="50" fill="#facc15" font-size="24" font-weight="950" letter-spacing="1">UV WIREFRAME: ${partNameUpper}</text>\n`;
+  svg += `  <text x="40" y="80" fill="#78716c" font-size="14" font-weight="500">Isolated 3D Mesh Wireframe • UDIM ${tile}</text>\n`;
+
+  const xOffset = padding;
+  const yOffset = 120 + padding;
+
+  // Draw tile border frame
+  svg += `  <!-- TILE ${tile} FRAME -->\n`;
+  svg += `  <rect x="${xOffset}" y="${yOffset}" width="${tileSize}" height="${tileSize}" fill="#1c1917" stroke="#44403c" stroke-width="2" rx="16" />\n`;
+  svg += `  <text x="${xOffset + 24}" y="${yOffset + 40}" fill="#22c55e" font-size="18" font-weight="800">UDIM ${tile}</text>\n`;
+
+  // Draw mesh triangles
+  svg += `  <!-- MESH: ${mesh.name} -->\n`;
+  svg += `  <g stroke="#3b82f6" stroke-width="0.75" fill="none" opacity="0.8">\n`;
+
+  const totalTris = triangles.length;
+  const step = totalTris > 1500 ? Math.ceil(totalTris / 1500) : 1;
+
+  for (let i = 0; i < totalTris; i += step) {
+    const tri = triangles[i];
+    const u0 = uvAttr.getX(tri[0]);
+    const v0 = uvAttr.getY(tri[0]);
+    const u1 = uvAttr.getX(tri[1]);
+    const v1 = uvAttr.getY(tri[1]);
+    const u2 = uvAttr.getX(tri[2]);
+    const v2 = uvAttr.getY(tri[2]);
+
+    const tU0 = u0 - Math.floor(u0);
+    const tV0 = v0 - Math.floor(v0);
+    const tU1 = u1 - Math.floor(u1);
+    const tV1 = v1 - Math.floor(v1);
+    const tU2 = u2 - Math.floor(u2);
+    const tV2 = v2 - Math.floor(v2);
+
+    const x0 = xOffset + (tU0 * tileSize);
+    const y0 = yOffset + tileSize - (tV0 * tileSize);
+    const x1 = xOffset + (tU1 * tileSize);
+    const y1 = yOffset + tileSize - (tV1 * tileSize);
+    const x2 = xOffset + (tU2 * tileSize);
+    const y2 = yOffset + tileSize - (tV2 * tileSize);
+
+    svg += `    <polygon points="${x0.toFixed(1)},${y0.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}" />\n`;
+  }
+
+  svg += `  </g>\n`;
+
+  const legendY = yOffset + tileSize - 32;
+  svg += `  <rect x="${xOffset + 24}" y="${legendY - 10}" width="12" height="12" fill="#3b82f6" rx="3" />\n`;
+  svg += `  <text x="${xOffset + 44}" y="${legendY}" fill="#f5f5f4" font-size="12" font-weight="600">Mesh ID: ${mesh.name}</text>\n`;
+
+  svg += `</svg>\n`;
+  return svg;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,6 +541,8 @@ interface FBXModelProps {
   translatedParts?: Record<string, { name: string, description: string }>;
   isMobile?: boolean;
   hoveredPartId?: string | null;
+  onUVLayoutGenerated?: (svg: string, filename: string) => void;
+  onPartUVLayoutGenerated?: (meshName: string, svg: string, filename: string) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -100,7 +555,9 @@ const FBXModel: React.FC<FBXModelProps> = ({
   modelParts = [], activePartId, onPartClick, onMaterialsLoaded, onMeshesLoaded,
   onAnimationFinished, onAnimationsDetected,
   translatedParts = {}, isMobile = false,
-  hoveredPartId = null
+  hoveredPartId = null,
+  onUVLayoutGenerated,
+  onPartUVLayoutGenerated
 }) => {
   const originalFbx = useLoader(FBXLoader, url);
 
@@ -108,10 +565,14 @@ const FBXModel: React.FC<FBXModelProps> = ({
   const onMaterialsLoadedRef = useRef(onMaterialsLoaded);
   const onMeshesLoadedRef = useRef(onMeshesLoaded);
   const onAnimationsDetectedRef = useRef(onAnimationsDetected);
+  const onUVLayoutGeneratedRef = useRef(onUVLayoutGenerated);
+  const onPartUVLayoutGeneratedRef = useRef(onPartUVLayoutGenerated);
 
   useEffect(() => { onMaterialsLoadedRef.current = onMaterialsLoaded; }, [onMaterialsLoaded]);
   useEffect(() => { onMeshesLoadedRef.current = onMeshesLoaded; }, [onMeshesLoaded]);
   useEffect(() => { onAnimationsDetectedRef.current = onAnimationsDetected; }, [onAnimationsDetected]);
+  useEffect(() => { onUVLayoutGeneratedRef.current = onUVLayoutGenerated; }, [onUVLayoutGenerated]);
+  useEffect(() => { onPartUVLayoutGeneratedRef.current = onPartUVLayoutGenerated; }, [onPartUVLayoutGenerated]);
 
   const fbx = useMemo(() => {
     const clone = SkeletonUtils.clone(originalFbx);
@@ -119,6 +580,9 @@ const FBXModel: React.FC<FBXModelProps> = ({
     clone.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh;
+        if (mesh.geometry) {
+          ensureUVs(mesh.geometry);
+        }
         const convert = (m: THREE.Material | null | undefined): THREE.Material => {
           if (!m) return new THREE.MeshStandardMaterial({ color: 0xcccccc, name: 'Fallback' });
           
@@ -231,19 +695,205 @@ const FBXModel: React.FC<FBXModelProps> = ({
 
     toLoad.forEach(({ url: u, isColor }) => {
       const lo = u.toLowerCase();
-      let loader: any = textureLoader.current;
-      if (lo.endsWith('.tga')) loader = tgaLoader.current;
-      else if (lo.endsWith('.dds')) loader = ddsLoader.current;
-      loader.load(u, (tex: THREE.Texture) => {
-        tex.colorSpace = isColor ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-        tex.needsUpdate = true;
-        textureCacheRef.current[u] = tex;
-        setTextureCache(prev => ({ ...prev, [u]: tex }));
-      }, undefined, (err: any) => console.error(`[FBXModel] ❌ Failed: "${u}"`, err));
+      // Inspect if URL points to a TGA/DDS file (handles files served via proxy endpoints with query params)
+      let isTgaFile = false;
+      let isDdsFile = false;
+
+      if (lo.includes('filename=')) {
+        const fileParam = lo.split('filename=')[1].split('&')[0];
+        isTgaFile = fileParam.endsWith('.tga');
+        isDdsFile = fileParam.endsWith('.dds');
+      } else {
+        isTgaFile = lo.endsWith('.tga') || lo.includes('.tga?');
+        isDdsFile = lo.endsWith('.dds') || lo.includes('.dds?');
+      }
+
+      if (isTgaFile || isDdsFile) {
+        let loader: any = isTgaFile ? tgaLoader.current : ddsLoader.current;
+        loader.load(u, (tex: THREE.Texture) => {
+          tex.colorSpace = isColor ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+          tex.wrapS = THREE.RepeatWrapping;
+          tex.wrapT = THREE.RepeatWrapping;
+          const shouldFlipY = settings.flipY !== undefined ? settings.flipY : true;
+          tex.flipY = shouldFlipY;
+          tex.anisotropy = settings.anisotropy !== undefined ? settings.anisotropy : 16;
+          tex.needsUpdate = true;
+          textureCacheRef.current[u] = tex;
+          setTextureCache(prev => ({ ...prev, [u]: tex }));
+        }, undefined, (err: any) => console.error(`[FBXModel] ❌ Failed: "${u}"`, err));
+      } else {
+        // Optimized standard image loader with smart Canvas downscaling to prevent GPU Out Of Memory and WebGL context loss
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.referrerPolicy = 'no-referrer';
+        img.src = u;
+        img.onload = () => {
+          try {
+            // Cap max size according to settings or fallback to 4096 for gorgeous resolution (1024 was previously causing blurry decals)
+            const maxDim = settings.maxTextureSize !== undefined ? settings.maxTextureSize : 4096;
+            let w = img.width;
+            let h = img.height;
+            let finalSource: HTMLImageElement | HTMLCanvasElement = img;
+
+            if (maxDim > 0 && (w > maxDim || h > maxDim)) {
+              const ratio = Math.min(maxDim / w, maxDim / h);
+              w = Math.round(w * ratio);
+              h = Math.round(h * ratio);
+
+              const canvas = document.createElement('canvas');
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                // Use higher quality image smoothing on canvas scale down to prevent pixelation artifacts
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, 0, 0, w, h);
+                finalSource = canvas;
+                console.log(`[TextureOptimizer] Downscaled ${u} from ${img.width}x${img.height} to ${w}x${h} (Cap: ${maxDim})`);
+              }
+            }
+
+            const tex = new THREE.Texture(finalSource);
+            tex.colorSpace = isColor ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            const shouldFlipY = settings.flipY !== undefined ? settings.flipY : true;
+            tex.flipY = shouldFlipY;
+            tex.anisotropy = settings.anisotropy !== undefined ? settings.anisotropy : 16;
+            tex.needsUpdate = true;
+
+            textureCacheRef.current[u] = tex;
+            setTextureCache(prev => ({ ...prev, [u]: tex }));
+          } catch (e) {
+            console.error('[TextureOptimizer] Error processing texture canvas downscaling, falling back:', e);
+            // Fallback load
+            const fallbackLoader = new THREE.TextureLoader();
+            fallbackLoader.load(u, (tex) => {
+              tex.colorSpace = isColor ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+              tex.wrapS = THREE.RepeatWrapping;
+              tex.wrapT = THREE.RepeatWrapping;
+              const shouldFlipY = settings.flipY !== undefined ? settings.flipY : true;
+              tex.flipY = shouldFlipY;
+              tex.anisotropy = settings.anisotropy !== undefined ? settings.anisotropy : 16;
+              tex.needsUpdate = true;
+              textureCacheRef.current[u] = tex;
+              setTextureCache(prev => ({ ...prev, [u]: tex }));
+            }, undefined, (err) => console.error(`[FBXModel] ❌ Fallback failed: "${u}"`, err));
+          }
+        };
+        img.onerror = (err) => {
+          console.error(`[TextureOptimizer] Image load error for ${u}. Trying legacy loader as fallback:`, err);
+          const fallbackLoader = new THREE.TextureLoader();
+          fallbackLoader.load(u, (tex) => {
+            tex.colorSpace = isColor ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            const shouldFlipY = settings.flipY !== undefined ? settings.flipY : true;
+            tex.flipY = shouldFlipY;
+            tex.anisotropy = settings.anisotropy !== undefined ? settings.anisotropy : 16;
+            tex.needsUpdate = true;
+            textureCacheRef.current[u] = tex;
+            setTextureCache(prev => ({ ...prev, [u]: tex }));
+          }, undefined, (fallbackErr) => console.error(`[FBXModel] ❌ Fallback failed too: "${u}"`, fallbackErr));
+        };
+      }
     });
   }, [textureSets, settings]);
 
   useEffect(() => { textureCacheRef.current = textureCache; }, [textureCache]);
+
+  // Clean up and dispose all loaded textures on unmount to prevent GPU memory leaks and WebGL context crashes
+  useEffect(() => {
+    return () => {
+      console.log("[FBXModel] 🧹 Disposing cached textures to free GPU memory...");
+      const cache = textureCacheRef.current;
+      if (cache) {
+        Object.values(cache).forEach((tex) => {
+          if (tex && typeof tex.dispose === 'function') {
+            try {
+              tex.dispose();
+            } catch (e) {
+              console.warn("[FBXModel] Error disposing texture:", e);
+            }
+          }
+        });
+      }
+      textureCacheRef.current = {};
+    };
+  }, []);
+
+  // Synchronize flipY setting changes to all cached textures immediately
+  useEffect(() => {
+    const shouldFlipY = settings.flipY !== undefined ? settings.flipY : true;
+    let updated = false;
+    Object.values(textureCache).forEach((tex) => {
+      if (tex.flipY !== shouldFlipY) {
+        tex.flipY = shouldFlipY;
+        tex.needsUpdate = true;
+        updated = true;
+      }
+    });
+    if (updated && fbx) {
+      fbx.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const mesh = child as THREE.Mesh;
+          const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          materials.forEach((mat) => {
+            if (mat) {
+              mat.needsUpdate = true;
+            }
+          });
+        }
+      });
+    }
+  }, [settings.flipY, textureCache, fbx]);
+
+  // Synchronize anisotropy setting changes to all cached textures immediately
+  useEffect(() => {
+    const activeAnisotropy = settings.anisotropy !== undefined ? settings.anisotropy : 16;
+    let updated = false;
+    Object.values(textureCache).forEach((tex) => {
+      if (tex.anisotropy !== activeAnisotropy) {
+        tex.anisotropy = activeAnisotropy;
+        tex.needsUpdate = true;
+        updated = true;
+      }
+    });
+    if (updated && fbx) {
+      fbx.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const mesh = child as THREE.Mesh;
+          const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          materials.forEach((mat) => {
+            if (mat) {
+              mat.needsUpdate = true;
+            }
+          });
+        }
+      });
+    }
+  }, [settings.anisotropy, textureCache, fbx]);
+
+  // Flush texture cache when max resolution limit changes so textures are re-rendered at the new cap size
+  useEffect(() => {
+    if (settings.maxTextureSize === undefined) return;
+    console.log("[FBXModel] 🔄 Texture resolution limit changed. Flushing cache to re-decode at:", settings.maxTextureSize);
+    
+    // Dispose previous textures to free up GPU memory
+    Object.values(textureCacheRef.current).forEach((tex) => {
+      if (tex && typeof tex.dispose === 'function') {
+        try {
+          tex.dispose();
+        } catch (e) {
+          console.warn("[FBXModel] Error disposing texture:", e);
+        }
+      }
+    });
+    
+    textureCacheRef.current = {};
+    setTextureCache({});
+  }, [settings.maxTextureSize]);
 
   // ── Animation control ────────────────────────────────────────────────────
   useEffect(() => {
@@ -324,48 +974,90 @@ const FBXModel: React.FC<FBXModelProps> = ({
       const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
 
       materials.forEach((mat) => {
+        // Apply wireframe mode to all materials dynamically
+        if (mat) {
+          (mat as any).wireframe = !!settings.wireframe;
+          mat.needsUpdate = true;
+        }
+        if (mesh.userData.backFaceMat) {
+          (mesh.userData.backFaceMat as any).wireframe = !!settings.wireframe;
+          (mesh.userData.backFaceMat as any).needsUpdate = true;
+        }
+
         if (!(mat instanceof THREE.MeshStandardMaterial) || !mat.userData.isPBR) return;
 
         // ── 1. Resolve best TextureSet for this mesh/material ──────────────
-        const set = resolveBestSet(mesh.name, mat.name, textureSets);
+        const set = resolveBestSet(mesh.name, mat.name, textureSets, mesh.geometry);
+
+        // ── 1.5 Validate client settings mappings against mesh geometry UDIM 
+        const geomUDIM = mesh.geometry ? detectUDIMTile(mesh.geometry) : null;
+        const getValidMappingUrl = (url: string | undefined) => {
+          if (!url) return undefined;
+          if (geomUDIM !== null) {
+            const texUDIM = extractUDIMFromUrl(url);
+            if (texUDIM !== null && texUDIM !== geomUDIM) {
+              return undefined;
+            }
+          }
+          return url;
+        };
 
         // ── 2. Helper to get a cached texture ─────────────────────────────
         const tex = (url: string | undefined) => (url ? textureCache[url] : undefined);
 
         // ── 3. Base color / albedo ─────────────────────────────────────────
-        // textureSets takes priority over legacy materialMappings
-        const baseColorTex = tex(set?.baseColor) ?? tex(settings.materialMappings?.[mat.name]);
-        if (baseColorTex) { mat.map = baseColorTex; mat.color.set(0xffffff); }
-        else { mat.map = mat.userData.originalMap || null; mat.color.copy(mat.userData.originalColor || new THREE.Color(0xffffff)); }
+        const baseColorTex = tex(getValidMappingUrl(settings.materialMappings?.[mat.name])) ?? tex(set?.baseColor);
+        if (baseColorTex) { 
+          mat.map = baseColorTex; 
+          mat.color.set(0xffffff); 
+        } else { 
+          mat.map = mat.userData.originalMap || null; 
+          mat.color.copy(mat.userData.originalColor || new THREE.Color(0xffffff)); 
+        }
 
         // ── 4. Normal ──────────────────────────────────────────────────────
-        const normalTex = tex(set?.normal) ?? tex(settings.normalMappings?.[mat.name]);
-        if (normalTex) { mat.normalMap = normalTex; mat.normalScale.set(1, 1); }
+        const normalTex = tex(getValidMappingUrl(settings.normalMappings?.[mat.name])) ?? tex(set?.normal);
+        mat.normalMap = normalTex || null;
+        if (normalTex) { 
+          mat.normalScale.set(1, 1); 
+        }
 
         // ── 5. Metalness ───────────────────────────────────────────────────
-        const metalTex = tex(set?.metalness) ?? tex(settings.metalMappings?.[mat.name]);
-        if (metalTex) mat.metalnessMap = metalTex;
+        const metalTex = tex(getValidMappingUrl(settings.metalMappings?.[mat.name])) ?? tex(set?.metalness);
+        mat.metalnessMap = metalTex || null;
 
         // ── 6. Roughness ───────────────────────────────────────────────────
-        const roughTex = tex(set?.roughness) ?? tex(settings.roughMappings?.[mat.name]);
-        if (roughTex) mat.roughnessMap = roughTex;
+        const roughTex = tex(getValidMappingUrl(settings.roughMappings?.[mat.name])) ?? tex(set?.roughness);
+        mat.roughnessMap = roughTex || null;
 
         // ── 7. Alpha ───────────────────────────────────────────────────────
-        const alphaTex = tex(set?.alpha) ?? tex(settings.alphaMappings?.[mat.name]);
-        if (alphaTex) mat.alphaMap = alphaTex;
-        else mat.alphaMap = mat.userData.originalAlphaMap || null;
+        const alphaTex = tex(getValidMappingUrl(settings.alphaMappings?.[mat.name])) ?? tex(set?.alpha);
+        mat.alphaMap = alphaTex || mat.userData.originalAlphaMap || null;
 
         // ── 8. Emissive ────────────────────────────────────────────────────
-        const emissiveTex = tex(set?.emissive) ?? tex(settings.emissiveMappings?.[mat.name]);
-        if (emissiveTex) { mat.emissiveMap = emissiveTex; mat.emissive.set(0xffffff); mat.emissiveIntensity = settings.emissiveIntensity || 1.0; }
+        const emissiveTex = tex(getValidMappingUrl(settings.emissiveMappings?.[mat.name])) ?? tex(set?.emissive);
+        mat.emissiveMap = emissiveTex || null;
+        if (emissiveTex) { 
+          mat.emissive.set(0xffffff); 
+          mat.emissiveIntensity = settings.emissiveIntensity || 1.0; 
+        }
 
         // ── 9. AO ──────────────────────────────────────────────────────────
-        const aoTex = tex(set?.ao) ?? tex(settings.aoMappings?.[mat.name]);
-        if (aoTex) { mat.aoMap = aoTex; mat.aoMapIntensity = 1.0; }
+        const aoTex = tex(getValidMappingUrl(settings.aoMappings?.[mat.name])) ?? tex(set?.ao);
+        mat.aoMap = aoTex || null;
+        if (aoTex) { 
+          mat.aoMapIntensity = 1.0; 
+          if (mesh.geometry && (!mesh.geometry.attributes || !mesh.geometry.attributes.uv2)) {
+            aoTex.channel = 0;
+          }
+        }
 
         // ── 10. Height / displacement ──────────────────────────────────────
-        const heightTex = tex(set?.height) ?? tex(settings.heightMappings?.[mat.name]);
-        if (heightTex) { mat.displacementMap = heightTex; mat.displacementScale = 0.1; }
+        const heightTex = tex(getValidMappingUrl(settings.heightMappings?.[mat.name])) ?? tex(set?.height);
+        mat.displacementMap = heightTex || null;
+        if (heightTex) { 
+          mat.displacementScale = 0.1; 
+        }
 
         // ── 11. PBR scalars ────────────────────────────────────────────────
         mat.metalness = mat.metalnessMap ? 1.0 : settings.metalness;
@@ -386,7 +1078,7 @@ const FBXModel: React.FC<FBXModelProps> = ({
           if (mat.alphaMap) mat.alphaTest = 0.1;
 
           // Stable transparency sorting
-          mat.depthWrite = settings.opacity > 0.92; // Keep depth for near-opaque
+          mat.depthWrite = settings.opacity > 0.85; // Keep depth write for high-opacity objects (including those with alpha maps) to prevent sorting glitched faces!
           mesh.frustumCulled = false; 
           
           if (isShell) {
@@ -588,6 +1280,137 @@ const FBXModel: React.FC<FBXModelProps> = ({
       onMeshesLoadedRef.current(meshNames);
     }
   }, [meshNames]);
+
+  // NEW: Automatically generate and save UV layout SVG vector file on disk for each mesh sequentially
+  useEffect(() => {
+    if (!fbx) return;
+    
+    let isCancelled = false;
+    
+    const runSequentialUVSave = async () => {
+      // 1. Gather all meshes
+      const meshes: THREE.Mesh[] = [];
+      fbx.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          meshes.push(child as THREE.Mesh);
+        }
+      });
+
+      if (meshes.length === 0) return;
+
+      console.log(`[UV Auto-Saver] Starting sequential UV layout auto-saver for ${meshes.length} parts...`);
+
+      // 2. Generate and save the combined model map as a base/reference
+      try {
+        const combinedSvg = generateUVSVG(fbx);
+        if (combinedSvg && !isCancelled) {
+          let lastPart = url.split('/').pop() || '';
+          if (lastPart.includes('?')) {
+            try {
+              const searchParams = new URLSearchParams(lastPart.split('?')[1]);
+              const qFileName = searchParams.get('fileName') || searchParams.get('filename');
+              if (qFileName) {
+                lastPart = qFileName;
+              } else {
+                lastPart = lastPart.split('?')[0];
+              }
+            } catch (e) {
+              lastPart = lastPart.split('?')[0];
+            }
+          }
+          const baseName = lastPart.toLowerCase().replace(/\.fbx$/i, '');
+          const combinedFilename = `${baseName}_uv_layout.svg`;
+
+          if (onUVLayoutGeneratedRef.current) {
+            onUVLayoutGeneratedRef.current(combinedSvg, combinedFilename);
+          }
+
+          console.log(`[UV Auto-Saver] Saving combined model UV layout sequentially: ${combinedFilename}`);
+          await fetch('/api/save-uv-svg', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ svg: combinedSvg, filename: combinedFilename })
+          })
+          .then(async res => {
+            if (!res.ok) {
+              const text = await res.text();
+              throw new Error(`Server responded with ${res.status}: ${text}`);
+            }
+            return res.json();
+          })
+          .catch(err => console.warn(`[UV Auto-Saver] Error saving combined:`, err));
+        }
+      } catch (err) {
+        console.warn(`[UV Auto-Saver] Error generating combined UV map:`, err);
+      }
+
+      // 3. Process each mesh sequentially (one by one, NOT in parallel!)
+      for (let i = 0; i < meshes.length; i++) {
+        if (isCancelled) break;
+        const mesh = meshes[i];
+        try {
+          const svg = generateSingleMeshUVSVG(mesh);
+          if (!svg) continue;
+
+          let lastPart = url.split('/').pop() || '';
+          if (lastPart.includes('?')) {
+            try {
+              const searchParams = new URLSearchParams(lastPart.split('?')[1]);
+              const qFileName = searchParams.get('fileName') || searchParams.get('filename');
+              if (qFileName) {
+                lastPart = qFileName;
+              } else {
+                lastPart = lastPart.split('?')[0];
+              }
+            } catch (e) {
+              lastPart = lastPart.split('?')[0];
+            }
+          }
+          const baseName = lastPart.toLowerCase().replace(/\.fbx$/i, '');
+          const meshCleanName = mesh.name.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+          const partFilename = `${baseName}_part_${meshCleanName}_uv_layout.svg`;
+
+          if (onPartUVLayoutGeneratedRef.current && !isCancelled) {
+            onPartUVLayoutGeneratedRef.current(mesh.name, svg, partFilename);
+          }
+
+          console.log(`[UV Auto-Saver] [Part ${i+1}/${meshes.length}] Saving isolated UV layout for part mesh: ${mesh.name} -> ${partFilename}`);
+          
+          await fetch('/api/save-uv-svg', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ svg, filename: partFilename })
+          })
+          .then(async res => {
+            if (!res.ok) {
+              const text = await res.text();
+              throw new Error(`Server responded with ${res.status}: ${text}`);
+            }
+            return res.json();
+          })
+          .then(() => {
+            console.log(`[UV Auto-Saver] [Part ${i+1}/${meshes.length}] Successfully saved isolated UV map to workspace as ${partFilename}`);
+          })
+          .catch(err => {
+            console.warn(`[UV Auto-Saver] [Part ${mesh.name}] Server communication error:`, err.message || err);
+          });
+
+          // A small artificial delay to avoid hammering the local server
+          await new Promise(resolve => setTimeout(resolve, 80));
+        } catch (err) {
+          console.warn(`[UV Auto-Saver] [Part ${mesh.name}] Failed to generate/save UV layout:`, err);
+        }
+      }
+      
+      console.log(`[UV Auto-Saver] Completed sequential UV layout auto-saver.`);
+    };
+
+    runSequentialUVSave();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [fbx, url]);
 
   // Handle programmatic focus from Sidebar
   useEffect(() => {

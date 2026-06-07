@@ -18,6 +18,36 @@ interface SidebarProps {
   isLoadingCatalog: boolean;
 }
 
+const isModelTextureMatch = (fileName: string, modelName: string): boolean => {
+  if (!fileName || !modelName) return false;
+
+  // 1. Remove standard extensions from ends of names before comparison
+  const cleanExtension = (str: string) => {
+    return str.replace(/\.(fbx|obj|gltf|glb|png|jpg|jpeg|webp|tga|dds|gif|bmp|tiff)$/i, '').trim();
+  };
+
+  const fNameNoExt = cleanExtension(fileName);
+  const mNameNoExt = cleanExtension(modelName);
+
+  // 2. Normalize by converting to lowercase and replacing word separators with single underscore
+  const normalize = (str: string) => {
+    return str.toLowerCase().trim().replace(/[\s\-_.]+/g, '_');
+  };
+
+  const fNorm = normalize(fNameNoExt);
+  const mNorm = normalize(mNameNoExt);
+
+  // 3. Verify that the texture base name starts with the model base name
+  if (!fNorm.startsWith(mNorm)) return false;
+
+  // 4. Ensure word boundary matching to avoid substrings like 'Desk' matching 'Desktop'
+  const nextChar = fNorm.charAt(mNorm.length);
+  if (!nextChar) return true; // exact match
+
+  const isAlphanumeric = /[a-z0-9]/.test(nextChar);
+  return !isAlphanumeric;
+};
+
 const Sidebar: React.FC<SidebarProps> = ({ 
   models, selectedId, onSelect, onAddFile, onRemove, onAddFromUrl, language, isMobile = false,
   catalogFiles, isLoadingCatalog
@@ -83,10 +113,10 @@ const Sidebar: React.FC<SidebarProps> = ({
         const serverLikes = updatedProduct.likesCount ?? updatedProduct.LikesCount ?? 0;
         setLikesCounts(prev => ({ ...prev, [normalizedName]: serverLikes }));
       } else {
-        console.error(`Failed to send like update for ${productName}`);
+        console.warn(`Failed to send like update for ${productName}`);
       }
     } catch (err) {
-      console.error(`Error sending like update for ${productName}:`, err);
+      console.warn(`Error sending like update for ${productName}:`, err);
     }
   };
 
@@ -118,7 +148,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       
       setInventory(prev => ({ ...prev, [normalizedName]: 10 }));
     } catch (err) {
-      console.error(`Failed to fetch inventory for ${productName}:`, err);
+      console.warn(`Failed to fetch inventory for ${productName}:`, err);
       setInventory(prev => ({ ...prev, [normalizedName]: 10 }));
     }
   };
@@ -175,7 +205,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             }
           }
         } catch (jsonErr) {
-          console.error("Failed to parse product JSON:", jsonErr);
+          console.warn("Failed to parse product JSON:", jsonErr);
           setDisplayStatus(prev => ({ ...prev, [normalizedName]: false }));
         }
       } else if (res.status === 404) {
@@ -187,7 +217,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         setDisplayStatus(prev => ({ ...prev, [normalizedName]: false }));
       }
     } catch (err) {
-      console.error("Fetch error for product:", err);
+      console.warn("Fetch error for product:", err);
       setDisplayStatus(prev => ({ ...prev, [normalizedName]: false }));
     }
   };
@@ -202,7 +232,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         }
       }
     } catch (err) {
-      console.error("Failed to fetch categories:", err);
+      console.warn("Failed to fetch categories:", err);
     }
   };
 
@@ -213,7 +243,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     try {
       console.log("Fetching textures catalog from Azure...");
       // We only need to fetch textures here, models come from props
-      const texturesRes = await fetch('/api/files/get-files?folder=images&clientName=tenantB');
+      const texturesRes = await fetch('/api/files/get-files?folder=images&clientName=tenantB&v=3');
       const rawTexturesData = texturesRes.ok ? await texturesRes.json() : [];
       
       const getListData = (raw: any) => {
@@ -230,7 +260,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         if (typeof item === 'string') return { key: item, name: item, url: item };
         const name = item.fileName || item.FileName || item.filename || item.Name || item.name || item.Title || item.title || "";
         const key = item.fullPath || item.FullPath || item.fullpath || item.Key || item.item_key || item.key || item.FilePath || name || "";
-        const url = `/api/files/get-file?folder=${encodeURIComponent(sourceFolder)}&clientName=tenantB&fileName=${encodeURIComponent(name)}`;
+        const url = `/api/files/get-file?folder=${encodeURIComponent(sourceFolder)}&clientName=tenantB&fileName=${encodeURIComponent(name)}&v=3`;
         return { key, name, url };
       };
 
@@ -246,7 +276,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         setR2Textures(textures);
       }
     } catch (err) {
-      console.error("Catalog Texture Fetch Error:", err);
+      console.warn("Catalog Texture Fetch Error:", err);
     } finally {
       setIsLoadingR2(false);
     }
@@ -471,10 +501,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                     const displayName = translation?.name || apiTitles[normalizedName] || cleanFileName;
                     
                     const thumbnail = r2Textures.find(t => {
-                      const lowTex = t.name.toLowerCase();
-                      const lowModel = originalDisplayName.toLowerCase();
-                      return lowTex.startsWith(lowModel) && lowTex.includes('preview');
-                    }) || r2Textures.find(t => t.name.toLowerCase().startsWith(originalDisplayName.toLowerCase()));
+                      return isModelTextureMatch(t.name, originalDisplayName) && t.name.toLowerCase().includes('preview');
+                    }) || r2Textures.find(t => isModelTextureMatch(t.name, originalDisplayName));
                     
                     const isOutOfStock = inventory[normalizedName] === 0;
                     const description = translation?.description || descriptions[normalizedName];
@@ -598,10 +626,8 @@ const Sidebar: React.FC<SidebarProps> = ({
 
                           // Prioritize textures that match the model name and contain "preview"
                           const thumbnail = r2Textures.find(t => {
-                            const lowTex = t.name.toLowerCase();
-                            const lowModel = originalDisplayName.toLowerCase();
-                            return lowTex.startsWith(lowModel) && lowTex.includes('preview');
-                          }) || r2Textures.find(t => t.name.toLowerCase().startsWith(originalDisplayName.toLowerCase()));
+                            return isModelTextureMatch(t.name, originalDisplayName) && t.name.toLowerCase().includes('preview');
+                          }) || r2Textures.find(t => isModelTextureMatch(t.name, originalDisplayName));
 
                           const isOutOfStock = inventory[normalizedName] === 0;
                           const description = translation?.description || descriptions[normalizedName];
