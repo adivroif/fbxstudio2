@@ -1,0 +1,62 @@
+[
+  {
+    "fileName": "Axe.fbx",
+    "fullPath": "tenants/tenantA/Axe.fbx",
+    "contentType": "application/octet-stream",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=tenants%2FtenantA&fileName=Axe.fbx"
+  },
+  {
+    "fileName": "Chest.fbx",
+    "fullPath": "tenants/tenantA/Chest.fbx",
+    "contentType": "application/octet-stream",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=tenants%2FtenantA&fileName=Chest.fbx"
+  },
+  {
+    "fileName": "Connector.fbx",
+    "fullPath": "tenants/tenantA/Connector.fbx",
+    "contentType": "application/octet-stream",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=tenants%2FtenantA&fileName=Connector.fbx"
+  },
+  {
+    "fileName": "ELSA 2 Caliper Guide Pin 35X144mm.fbx",
+    "fullPath": "tenants/tenantA/ELSA 2 Caliper Guide Pin 35X144mm.fbx",
+    "contentType": "application/octet-stream",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=tenants%2FtenantA&fileName=ELSA%202%20Caliper%20Guide%20Pin%2035X144mm.fbx"
+  },
+  {
+    "fileName": "Full Ship.fbx",
+    "fullPath": "tenants/tenantA/Full Ship.fbx",
+    "contentType": "application/octet-stream",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=tenants%2FtenantA&fileName=Full%20Ship.fbx"
+  },
+  {
+    "fileName": "Guide Pin With Bolt For ELSA 2 Caliper Kit.fbx",
+    "fullPath": "tenants/tenantA/Guide Pin With Bolt For ELSA 2 Caliper Kit.fbx",
+    "contentType": "application/octet-stream",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=tenants%2FtenantA&fileName=Guide%20Pin%20With%20Bolt%20For%20ELSA%202%20Caliper%20Kit.fbx"
+  },
+  {
+    "fileName": "MAXX19 Push Plate.fbx",
+    "fullPath": "tenants/tenantA/MAXX19 Push Plate.fbx",
+    "contentType": "application/octet-stream",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=tenants%2FtenantA&fileName=MAXX19%20Push%20Plate.fbx"
+  },
+  {
+    "fileName": "MS27476.fbx",
+    "fullPath": "tenants/tenantA/MS27476.fbx",
+    "contentType": "application/octet-stream",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=tenants%2FtenantA&fileName=MS27476.fbx"
+  },
+  {
+    "fileName": "Pipe.fbx",
+    "fullPath": "tenants/tenantA/Pipe.fbx",
+    "contentType": "application/octet-stream",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=tenants%2FtenantA&fileName=Pipe.fbx"
+  },
+  {
+    "fileName": "Shadow.fbx",
+    "fullPath": "tenants/tenantA/Shadow.fbx",
+    "contentType": "application/octet-stream",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=tenants%2FtenantA&fileName=Shadow.fbx"
+  }
+]

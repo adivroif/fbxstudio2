@@ -1,8 +1,10 @@
 {
-  "name": "לקוח ב",
-  "description": "",
+  "name": "לקוח א",
+  "description": "An advanced 3D room environment for viewing and manipulating FBX models with real-time material controls for transparency, metalness, and roughness, enhanced by Gemini AI for smart material suggestions.",
   "requestFramePermissions": [
     "camera"
   ],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

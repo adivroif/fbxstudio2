@@ -1,0 +1,722 @@
+[
+  {
+    "fileName": "Axe__pblue_axe__BaseColor.png",
+    "fullPath": "images/Axe__pblue_axe__BaseColor.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe__pblue_axe__BaseColor.png"
+  },
+  {
+    "fileName": "Axe__pwooden_handel__BaseColor.1011.png",
+    "fullPath": "images/Axe__pwooden_handel__BaseColor.1011.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe__pwooden_handel__BaseColor.1011.png"
+  },
+  {
+    "fileName": "Axe__pwooden_handel__Metalness.1011.png",
+    "fullPath": "images/Axe__pwooden_handel__Metalness.1011.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe__pwooden_handel__Metalness.1011.png"
+  },
+  {
+    "fileName": "Axe__pwooden_handel__Normal.1011.png",
+    "fullPath": "images/Axe__pwooden_handel__Normal.1011.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe__pwooden_handel__Normal.1011.png"
+  },
+  {
+    "fileName": "Axe__pwooden_handel__Roughness.1011.png",
+    "fullPath": "images/Axe__pwooden_handel__Roughness.1011.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe__pwooden_handel__Roughness.1011.png"
+  },
+  {
+    "fileName": "Axe_axe_corner_psilvers_BaseColor.1002.png",
+    "fullPath": "images/Axe_axe_corner_psilvers_BaseColor.1002.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_axe_corner_psilvers_BaseColor.1002.png"
+  },
+  {
+    "fileName": "Axe_axe_corner_psilvers_Metalness.1002.png",
+    "fullPath": "images/Axe_axe_corner_psilvers_Metalness.1002.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_axe_corner_psilvers_Metalness.1002.png"
+  },
+  {
+    "fileName": "Axe_axe_corner_psilvers_Normal.1002.png",
+    "fullPath": "images/Axe_axe_corner_psilvers_Normal.1002.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_axe_corner_psilvers_Normal.1002.png"
+  },
+  {
+    "fileName": "Axe_axe_corner_psilvers_Roughness.1002.png",
+    "fullPath": "images/Axe_axe_corner_psilvers_Roughness.1002.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_axe_corner_psilvers_Roughness.1002.png"
+  },
+  {
+    "fileName": "Axe_lower_texture_BaseColor.1011.png",
+    "fullPath": "images/Axe_lower_texture_BaseColor.1011.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_lower_texture_BaseColor.1011.png"
+  },
+  {
+    "fileName": "Axe_lower_texture_Metalness.1011.png",
+    "fullPath": "images/Axe_lower_texture_Metalness.1011.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_lower_texture_Metalness.1011.png"
+  },
+  {
+    "fileName": "Axe_lower_texture_Normal.1011.png",
+    "fullPath": "images/Axe_lower_texture_Normal.1011.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_lower_texture_Normal.1011.png"
+  },
+  {
+    "fileName": "Axe_lower_texture_Roughness.1011.png",
+    "fullPath": "images/Axe_lower_texture_Roughness.1011.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_lower_texture_Roughness.1011.png"
+  },
+  {
+    "fileName": "Axe_pblue_axe_Metalness.png",
+    "fullPath": "images/Axe_pblue_axe_Metalness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pblue_axe_Metalness.png"
+  },
+  {
+    "fileName": "Axe_pblue_axe_Normal.png",
+    "fullPath": "images/Axe_pblue_axe_Normal.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pblue_axe_Normal.png"
+  },
+  {
+    "fileName": "Axe_pblue_axe_Roughness.png",
+    "fullPath": "images/Axe_pblue_axe_Roughness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pblue_axe_Roughness.png"
+  },
+  {
+    "fileName": "Axe_pgold_axe_BaseColor.1002.png",
+    "fullPath": "images/Axe_pgold_axe_BaseColor.1002.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_axe_BaseColor.1002.png"
+  },
+  {
+    "fileName": "Axe_pgold_axe_Metalness.1002.png",
+    "fullPath": "images/Axe_pgold_axe_Metalness.1002.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_axe_Metalness.1002.png"
+  },
+  {
+    "fileName": "Axe_pgold_axe_Normal.1002.png",
+    "fullPath": "images/Axe_pgold_axe_Normal.1002.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_axe_Normal.1002.png"
+  },
+  {
+    "fileName": "Axe_pgold_axe_Roughness.1002.png",
+    "fullPath": "images/Axe_pgold_axe_Roughness.1002.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_axe_Roughness.1002.png"
+  },
+  {
+    "fileName": "Axe_pgold_axe_pommel_BaseColor.1013.png",
+    "fullPath": "images/Axe_pgold_axe_pommel_BaseColor.1013.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_axe_pommel_BaseColor.1013.png"
+  },
+  {
+    "fileName": "Axe_pgold_axe_pommel_Metalness.1013.png",
+    "fullPath": "images/Axe_pgold_axe_pommel_Metalness.1013.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_axe_pommel_Metalness.1013.png"
+  },
+  {
+    "fileName": "Axe_pgold_axe_pommel_Normal.1013.png",
+    "fullPath": "images/Axe_pgold_axe_pommel_Normal.1013.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_axe_pommel_Normal.1013.png"
+  },
+  {
+    "fileName": "Axe_pgold_axe_pommel_Roughness.1013.png",
+    "fullPath": "images/Axe_pgold_axe_pommel_Roughness.1013.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_axe_pommel_Roughness.1013.png"
+  },
+  {
+    "fileName": "Axe_pgold_magen_david_BaseColor.1011.png",
+    "fullPath": "images/Axe_pgold_magen_david_BaseColor.1011.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_magen_david_BaseColor.1011.png"
+  },
+  {
+    "fileName": "Axe_pgold_magen_david_Metalness.1011.png",
+    "fullPath": "images/Axe_pgold_magen_david_Metalness.1011.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_magen_david_Metalness.1011.png"
+  },
+  {
+    "fileName": "Axe_pgold_magen_david_Normal.1011.png",
+    "fullPath": "images/Axe_pgold_magen_david_Normal.1011.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_magen_david_Normal.1011.png"
+  },
+  {
+    "fileName": "Axe_pgold_magen_david_Roughness.1011.png",
+    "fullPath": "images/Axe_pgold_magen_david_Roughness.1011.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_magen_david_Roughness.1011.png"
+  },
+  {
+    "fileName": "Axe_pgold_middel_handel_BaseColor.1013.png",
+    "fullPath": "images/Axe_pgold_middel_handel_BaseColor.1013.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_middel_handel_BaseColor.1013.png"
+  },
+  {
+    "fileName": "Axe_pgold_middel_handel_Metalness.1013.png",
+    "fullPath": "images/Axe_pgold_middel_handel_Metalness.1013.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_middel_handel_Metalness.1013.png"
+  },
+  {
+    "fileName": "Axe_pgold_middel_handel_Normal.1013.png",
+    "fullPath": "images/Axe_pgold_middel_handel_Normal.1013.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_middel_handel_Normal.1013.png"
+  },
+  {
+    "fileName": "Axe_pgold_middel_handel_Roughness.1013.png",
+    "fullPath": "images/Axe_pgold_middel_handel_Roughness.1013.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_middel_handel_Roughness.1013.png"
+  },
+  {
+    "fileName": "Axe_pgold_upper_texture_BaseColor.1001.png",
+    "fullPath": "images/Axe_pgold_upper_texture_BaseColor.1001.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_upper_texture_BaseColor.1001.png"
+  },
+  {
+    "fileName": "Axe_pgold_upper_texture_Metalness.1001.png",
+    "fullPath": "images/Axe_pgold_upper_texture_Metalness.1001.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_upper_texture_Metalness.1001.png"
+  },
+  {
+    "fileName": "Axe_pgold_upper_texture_Normal.1001.png",
+    "fullPath": "images/Axe_pgold_upper_texture_Normal.1001.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_upper_texture_Normal.1001.png"
+  },
+  {
+    "fileName": "Axe_pgold_upper_texture_Roughness.1001.png",
+    "fullPath": "images/Axe_pgold_upper_texture_Roughness.1001.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgold_upper_texture_Roughness.1001.png"
+  },
+  {
+    "fileName": "Axe_pgolden_axe_head_BaseColor.1003.png",
+    "fullPath": "images/Axe_pgolden_axe_head_BaseColor.1003.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgolden_axe_head_BaseColor.1003.png"
+  },
+  {
+    "fileName": "Axe_pgolden_axe_head_Metalness.1003.png",
+    "fullPath": "images/Axe_pgolden_axe_head_Metalness.1003.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgolden_axe_head_Metalness.1003.png"
+  },
+  {
+    "fileName": "Axe_pgolden_axe_head_Normal.1003.png",
+    "fullPath": "images/Axe_pgolden_axe_head_Normal.1003.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgolden_axe_head_Normal.1003.png"
+  },
+  {
+    "fileName": "Axe_pgolden_axe_head_Roughness.1003.png",
+    "fullPath": "images/Axe_pgolden_axe_head_Roughness.1003.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgolden_axe_head_Roughness.1003.png"
+  },
+  {
+    "fileName": "Axe_pgolden_rune_spot_BaseColor.1001.png",
+    "fullPath": "images/Axe_pgolden_rune_spot_BaseColor.1001.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgolden_rune_spot_BaseColor.1001.png"
+  },
+  {
+    "fileName": "Axe_pgolden_rune_spot_Metalness.1001.png",
+    "fullPath": "images/Axe_pgolden_rune_spot_Metalness.1001.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgolden_rune_spot_Metalness.1001.png"
+  },
+  {
+    "fileName": "Axe_pgolden_rune_spot_Normal.1001.png",
+    "fullPath": "images/Axe_pgolden_rune_spot_Normal.1001.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgolden_rune_spot_Normal.1001.png"
+  },
+  {
+    "fileName": "Axe_pgolden_rune_spot_Roughness.1001.png",
+    "fullPath": "images/Axe_pgolden_rune_spot_Roughness.1001.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_pgolden_rune_spot_Roughness.1001.png"
+  },
+  {
+    "fileName": "Axe_psilver_axe_rune_BaseColor.1012.png",
+    "fullPath": "images/Axe_psilver_axe_rune_BaseColor.1012.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_psilver_axe_rune_BaseColor.1012.png"
+  },
+  {
+    "fileName": "Axe_psilver_axe_rune_Metalness.1012.png",
+    "fullPath": "images/Axe_psilver_axe_rune_Metalness.1012.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_psilver_axe_rune_Metalness.1012.png"
+  },
+  {
+    "fileName": "Axe_psilver_axe_rune_Normal.1012.png",
+    "fullPath": "images/Axe_psilver_axe_rune_Normal.1012.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_psilver_axe_rune_Normal.1012.png"
+  },
+  {
+    "fileName": "Axe_psilver_axe_rune_Roughness.1012.png",
+    "fullPath": "images/Axe_psilver_axe_rune_Roughness.1012.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_psilver_axe_rune_Roughness.1012.png"
+  },
+  {
+    "fileName": "Axe_psilver_squer_rune_BaseColor.1012.png",
+    "fullPath": "images/Axe_psilver_squer_rune_BaseColor.1012.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_psilver_squer_rune_BaseColor.1012.png"
+  },
+  {
+    "fileName": "Axe_psilver_squer_rune_Metalness.1012.png",
+    "fullPath": "images/Axe_psilver_squer_rune_Metalness.1012.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_psilver_squer_rune_Metalness.1012.png"
+  },
+  {
+    "fileName": "Axe_psilver_squer_rune_Normal.1012.png",
+    "fullPath": "images/Axe_psilver_squer_rune_Normal.1012.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_psilver_squer_rune_Normal.1012.png"
+  },
+  {
+    "fileName": "Axe_psilver_squer_rune_Roughness.1012.png",
+    "fullPath": "images/Axe_psilver_squer_rune_Roughness.1012.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_psilver_squer_rune_Roughness.1012.png"
+  },
+  {
+    "fileName": "Axe_psilver_triangle_rune_BaseColor.1012.png",
+    "fullPath": "images/Axe_psilver_triangle_rune_BaseColor.1012.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_psilver_triangle_rune_BaseColor.1012.png"
+  },
+  {
+    "fileName": "Axe_psilver_triangle_rune_Metalness.1012.png",
+    "fullPath": "images/Axe_psilver_triangle_rune_Metalness.1012.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_psilver_triangle_rune_Metalness.1012.png"
+  },
+  {
+    "fileName": "Axe_psilver_triangle_rune_Normal.1012.png",
+    "fullPath": "images/Axe_psilver_triangle_rune_Normal.1012.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_psilver_triangle_rune_Normal.1012.png"
+  },
+  {
+    "fileName": "Axe_psilver_triangle_rune_Roughness.1012.png",
+    "fullPath": "images/Axe_psilver_triangle_rune_Roughness.1012.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Axe_psilver_triangle_rune_Roughness.1012.png"
+  },
+  {
+    "fileName": "Caliper Bush 39 mm (Long Type)_preview.png",
+    "fullPath": "images/Caliper Bush 39 mm (Long Type)_preview.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Caliper%20Bush%2039%20mm%20(Long%20Type)_preview.png"
+  },
+  {
+    "fileName": "Caliper Bush 39 mm Long Type Preview.png",
+    "fullPath": "images/Caliper Bush 39 mm Long Type Preview.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Caliper%20Bush%2039%20mm%20Long%20Type%20Preview.png"
+  },
+  {
+    "fileName": "Caliper Bush 39 mm Long Type_BaseColor.png",
+    "fullPath": "images/Caliper Bush 39 mm Long Type_BaseColor.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Caliper%20Bush%2039%20mm%20Long%20Type_BaseColor.png"
+  },
+  {
+    "fileName": "Caliper Bush 39 mm Long Type_Metalness.png",
+    "fullPath": "images/Caliper Bush 39 mm Long Type_Metalness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Caliper%20Bush%2039%20mm%20Long%20Type_Metalness.png"
+  },
+  {
+    "fileName": "Caliper Bush 39 mm Long Type_Normal.png",
+    "fullPath": "images/Caliper Bush 39 mm Long Type_Normal.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Caliper%20Bush%2039%20mm%20Long%20Type_Normal.png"
+  },
+  {
+    "fileName": "Caliper Bush 39 mm Long Type_Roughness.png",
+    "fullPath": "images/Caliper Bush 39 mm Long Type_Roughness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Caliper%20Bush%2039%20mm%20Long%20Type_Roughness.png"
+  },
+  {
+    "fileName": "Chest Base Color.png",
+    "fullPath": "images/Chest Base Color.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Chest%20Base%20Color.png"
+  },
+  {
+    "fileName": "Chest Metalness.png",
+    "fullPath": "images/Chest Metalness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Chest%20Metalness.png"
+  },
+  {
+    "fileName": "Chest Normal.png",
+    "fullPath": "images/Chest Normal.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Chest%20Normal.png"
+  },
+  {
+    "fileName": "Chest Roughness.png",
+    "fullPath": "images/Chest Roughness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Chest%20Roughness.png"
+  },
+  {
+    "fileName": "Connector Metalness.jpeg",
+    "fullPath": "images/Connector Metalness.jpeg",
+    "contentType": "image/jpeg",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Connector%20Metalness.jpeg"
+  },
+  {
+    "fileName": "Connector Preview.png",
+    "fullPath": "images/Connector Preview.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Connector%20Preview.png"
+  },
+  {
+    "fileName": "Connector Roughness.jpeg",
+    "fullPath": "images/Connector Roughness.jpeg",
+    "contentType": "image/jpeg",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Connector%20Roughness.jpeg"
+  },
+  {
+    "fileName": "Connector baseColor.jpeg",
+    "fullPath": "images/Connector baseColor.jpeg",
+    "contentType": "image/jpeg",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Connector%20baseColor.jpeg"
+  },
+  {
+    "fileName": "ELSA 2 Caliper Guide Pin 35X144mm_BaseColor.png",
+    "fullPath": "images/ELSA 2 Caliper Guide Pin 35X144mm_BaseColor.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=ELSA%202%20Caliper%20Guide%20Pin%2035X144mm_BaseColor.png"
+  },
+  {
+    "fileName": "ELSA 2 Caliper Guide Pin 35X144mm_Metalness.png",
+    "fullPath": "images/ELSA 2 Caliper Guide Pin 35X144mm_Metalness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=ELSA%202%20Caliper%20Guide%20Pin%2035X144mm_Metalness.png"
+  },
+  {
+    "fileName": "ELSA 2 Caliper Guide Pin 35X144mm_Normal.png",
+    "fullPath": "images/ELSA 2 Caliper Guide Pin 35X144mm_Normal.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=ELSA%202%20Caliper%20Guide%20Pin%2035X144mm_Normal.png"
+  },
+  {
+    "fileName": "ELSA 2 Caliper Guide Pin 35X144mm_Roughness.png",
+    "fullPath": "images/ELSA 2 Caliper Guide Pin 35X144mm_Roughness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=ELSA%202%20Caliper%20Guide%20Pin%2035X144mm_Roughness.png"
+  },
+  {
+    "fileName": "Full Ship Black White baseColor.png",
+    "fullPath": "images/Full Ship Black White baseColor.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Full%20Ship%20Black%20White%20baseColor.png"
+  },
+  {
+    "fileName": "Full Ship Blue Yellow baseColor.png",
+    "fullPath": "images/Full Ship Blue Yellow baseColor.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Full%20Ship%20Blue%20Yellow%20baseColor.png"
+  },
+  {
+    "fileName": "Full Ship Brown Lite baseColor.png",
+    "fullPath": "images/Full Ship Brown Lite baseColor.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Full%20Ship%20Brown%20Lite%20baseColor.png"
+  },
+  {
+    "fileName": "Full Ship Preview.png",
+    "fullPath": "images/Full Ship Preview.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Full%20Ship%20Preview.png"
+  },
+  {
+    "fileName": "Full Ship Preview_Preview_1.png",
+    "fullPath": "images/Full Ship Preview_Preview_1.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Full%20Ship%20Preview_Preview_1.png"
+  },
+  {
+    "fileName": "Full Ship Red baseColor.png",
+    "fullPath": "images/Full Ship Red baseColor.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Full%20Ship%20Red%20baseColor.png"
+  },
+  {
+    "fileName": "Guide Pin Bolt M18X1.5-150_Metalness.png",
+    "fullPath": "images/Guide Pin Bolt M18X1.5-150_Metalness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Guide%20Pin%20Bolt%20M18X1.5-150_Metalness.png"
+  },
+  {
+    "fileName": "Guide Pin Bolt M18X1.5-150_Normal.png",
+    "fullPath": "images/Guide Pin Bolt M18X1.5-150_Normal.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Guide%20Pin%20Bolt%20M18X1.5-150_Normal.png"
+  },
+  {
+    "fileName": "Guide Pin Bolt M18X1.5-150_Roughness.png",
+    "fullPath": "images/Guide Pin Bolt M18X1.5-150_Roughness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Guide%20Pin%20Bolt%20M18X1.5-150_Roughness.png"
+  },
+  {
+    "fileName": "Guide Pin Bolt M18X15-150 BaseColor.png",
+    "fullPath": "images/Guide Pin Bolt M18X15-150 BaseColor.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Guide%20Pin%20Bolt%20M18X15-150%20BaseColor.png"
+  },
+  {
+    "fileName": "Guide Pin With Bolt For ELSA 2 Caliper Kit_BaseColor.png",
+    "fullPath": "images/Guide Pin With Bolt For ELSA 2 Caliper Kit_BaseColor.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Guide%20Pin%20With%20Bolt%20For%20ELSA%202%20Caliper%20Kit_BaseColor.png"
+  },
+  {
+    "fileName": "Guide Pin With Bolt For ELSA 2 Caliper Kit_Metalness.png",
+    "fullPath": "images/Guide Pin With Bolt For ELSA 2 Caliper Kit_Metalness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Guide%20Pin%20With%20Bolt%20For%20ELSA%202%20Caliper%20Kit_Metalness.png"
+  },
+  {
+    "fileName": "Guide Pin With Bolt For ELSA 2 Caliper Kit_Normal.png",
+    "fullPath": "images/Guide Pin With Bolt For ELSA 2 Caliper Kit_Normal.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Guide%20Pin%20With%20Bolt%20For%20ELSA%202%20Caliper%20Kit_Normal.png"
+  },
+  {
+    "fileName": "Guide Pin With Bolt For ELSA 2 Caliper Kit_Roughness.png",
+    "fullPath": "images/Guide Pin With Bolt For ELSA 2 Caliper Kit_Roughness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Guide%20Pin%20With%20Bolt%20For%20ELSA%202%20Caliper%20Kit_Roughness.png"
+  },
+  {
+    "fileName": "MAXX19 Push Plate_BaseColor.png",
+    "fullPath": "images/MAXX19 Push Plate_BaseColor.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=MAXX19%20Push%20Plate_BaseColor.png"
+  },
+  {
+    "fileName": "MAXX19 Push Plate_Metalness.png",
+    "fullPath": "images/MAXX19 Push Plate_Metalness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=MAXX19%20Push%20Plate_Metalness.png"
+  },
+  {
+    "fileName": "MAXX19 Push Plate_Normal.png",
+    "fullPath": "images/MAXX19 Push Plate_Normal.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=MAXX19%20Push%20Plate_Normal.png"
+  },
+  {
+    "fileName": "MAXX19 Push Plate_Preview.png",
+    "fullPath": "images/MAXX19 Push Plate_Preview.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=MAXX19%20Push%20Plate_Preview.png"
+  },
+  {
+    "fileName": "MAXX19 Push Plate_Roughness.png",
+    "fullPath": "images/MAXX19 Push Plate_Roughness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=MAXX19%20Push%20Plate_Roughness.png"
+  },
+  {
+    "fileName": "MS27476 Normal.png",
+    "fullPath": "images/MS27476 Normal.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=MS27476%20Normal.png"
+  },
+  {
+    "fileName": "MS27476 Preview.png",
+    "fullPath": "images/MS27476 Preview.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=MS27476%20Preview.png"
+  },
+  {
+    "fileName": "MS27476_BaseColor.png",
+    "fullPath": "images/MS27476_BaseColor.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=MS27476_BaseColor.png"
+  },
+  {
+    "fileName": "MS27476_Metalness.png",
+    "fullPath": "images/MS27476_Metalness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=MS27476_Metalness.png"
+  },
+  {
+    "fileName": "MS27476_Roughness.png",
+    "fullPath": "images/MS27476_Roughness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=MS27476_Roughness.png"
+  },
+  {
+    "fileName": "Microscope Base Color.png",
+    "fullPath": "images/Microscope Base Color.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Microscope%20Base%20Color.png"
+  },
+  {
+    "fileName": "Microscope Metalness.png",
+    "fullPath": "images/Microscope Metalness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Microscope%20Metalness.png"
+  },
+  {
+    "fileName": "Microscope Normal.png",
+    "fullPath": "images/Microscope Normal.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Microscope%20Normal.png"
+  },
+  {
+    "fileName": "Microscope Preview.png",
+    "fullPath": "images/Microscope Preview.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Microscope%20Preview.png"
+  },
+  {
+    "fileName": "Microscope Roughness.png",
+    "fullPath": "images/Microscope Roughness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Microscope%20Roughness.png"
+  },
+  {
+    "fileName": "Pipe Base Color.png",
+    "fullPath": "images/Pipe Base Color.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Pipe%20Base%20Color.png"
+  },
+  {
+    "fileName": "Pipe Metalness.png",
+    "fullPath": "images/Pipe Metalness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Pipe%20Metalness.png"
+  },
+  {
+    "fileName": "Pipe Normal.png",
+    "fullPath": "images/Pipe Normal.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Pipe%20Normal.png"
+  },
+  {
+    "fileName": "Pipe Opacity.png",
+    "fullPath": "images/Pipe Opacity.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Pipe%20Opacity.png"
+  },
+  {
+    "fileName": "Pipe Preview.png",
+    "fullPath": "images/Pipe Preview.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Pipe%20Preview.png"
+  },
+  {
+    "fileName": "Pipe Roughness.png",
+    "fullPath": "images/Pipe Roughness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Pipe%20Roughness.png"
+  },
+  {
+    "fileName": "Shadow .png",
+    "fullPath": "images/Shadow .png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Shadow%20.png"
+  },
+  {
+    "fileName": "Shadow BaseColor.png",
+    "fullPath": "images/Shadow BaseColor.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Shadow%20BaseColor.png"
+  },
+  {
+    "fileName": "Shadow Metalness.png",
+    "fullPath": "images/Shadow Metalness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Shadow%20Metalness.png"
+  },
+  {
+    "fileName": "Shadow Normal.png",
+    "fullPath": "images/Shadow Normal.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Shadow%20Normal.png"
+  },
+  {
+    "fileName": "Shadow Opacity.png",
+    "fullPath": "images/Shadow Opacity.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Shadow%20Opacity.png"
+  },
+  {
+    "fileName": "Shadow Roughness.png",
+    "fullPath": "images/Shadow Roughness.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=Shadow%20Roughness.png"
+  },
+  {
+    "fileName": "pCylinder12 Preview.png",
+    "fullPath": "images/pCylinder12 Preview.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=pCylinder12%20Preview.png"
+  },
+  {
+    "fileName": "string.jpg",
+    "fullPath": "images/string.jpg",
+    "contentType": "image/jpeg",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=string.jpg"
+  },
+  {
+    "fileName": "wallpaper_customer.png",
+    "fullPath": "images/wallpaper_customer.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=wallpaper_customer.png"
+  },
+  {
+    "fileName": "wallpaper_customer_maxis.png",
+    "fullPath": "images/wallpaper_customer_maxis.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=wallpaper_customer_maxis.png"
+  },
+  {
+    "fileName": "wallpaper_customer_maxis_only_logo.png",
+    "fullPath": "images/wallpaper_customer_maxis_only_logo.png",
+    "contentType": "image/png",
+    "url": "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=images&fileName=wallpaper_customer_maxis_only_logo.png"
+  }
+]
