@@ -118,6 +118,49 @@ const azureCacheDir = path.join(process.cwd(), "local_azure_cache");
 const listsCacheDir = path.join(azureCacheDir, "lists");
 const filesCacheDir = path.join(azureCacheDir, "files");
 
+const R2_PUBLIC_BASE_URL = "https://pub-721b92b9c051433d993f7185396e4c79.r2.dev";
+
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeR2Key(key: string): string {
+  return safeDecodeURIComponent(String(key || "").trim()).replace(/^\/+/, "");
+}
+
+
+function r2PublicUrlFromKey(key: string): string {
+  return `${R2_PUBLIC_BASE_URL}/${normalizeR2Key(key).split("/").map(encodeURIComponent).join("/")}`;
+}
+
+function getMimeTypeByFileName(fileName: string): string {
+  const ext = path.extname(fileName).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    ".fbx": "application/octet-stream",
+    ".glb": "model/gltf-binary",
+    ".gltf": "model/gltf+json",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".tga": "image/tga",
+    ".dds": "image/vnd.ms-dds",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".svg": "image/svg+xml",
+    ".txt": "text/plain",
+    ".json": "application/json",
+    ".pdf": "application/pdf"
+  };
+
+  return mimeTypes[ext] || "application/octet-stream";
+}
+
+
 function ensureAzureCacheDirs() {
   try {
     if (!fs.existsSync(azureCacheDir)) fs.mkdirSync(azureCacheDir, { recursive: true });
@@ -383,14 +426,15 @@ function checkAzureAvailability(): boolean {
   return true;
 }
 
-async function robustFetchWithRetry(url: string, options: any = {}, initialTimeout = 5000, maxRetries = 2, bypassCircuitBreaker = false) {
+async function robustFetchWithRetry(url: string, options: any = {}, initialTimeout = 15000, maxRetries = 2, bypassCircuitBreaker = false) {
   if (!bypassCircuitBreaker && !checkAzureAvailability()) {
     throw new Error("Azure API is currently unreachable (Circuit Breaker active)");
   }
 
   let lastErr: any = null;
   let delay = 1000; // start with 1s delay
-  let timeout = initialTimeout;
+  // Enforce a minimum timeout of 15 seconds for general Azure/CDN stability
+  let timeout = Math.max(initialTimeout, 15000);
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     console.log(`[robustFetch] Attempt ${attempt}/${maxRetries} for URL: ${url} (timeout: ${timeout}ms, bypassCircuitBreaker: ${bypassCircuitBreaker})`);
@@ -414,11 +458,8 @@ async function robustFetchWithRetry(url: string, options: any = {}, initialTimeo
     } catch (err: any) {
       lastErr = err;
       console.warn(`[robustFetch] Attempt ${attempt} failed with error: ${err.message}. Retrying in ${delay}ms...`);
-      
-      // System socket timeouts or HTTP abort errors trip the circuit breaker
-      if (!bypassCircuitBreaker && err.message && (err.message.includes("timed out") || err.message.includes("timeout") || err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" || err.name === "AbortError")) {
-        markAzureAsUnreachable();
-      }
+      // We no longer trigger markAzureAsUnreachable() inside individual attempts.
+      // This prevents a single transient timeout or attempt from shutting down the API for everyone else mid-flight.
     }
 
     if (attempt < maxRetries) {
@@ -428,7 +469,7 @@ async function robustFetchWithRetry(url: string, options: any = {}, initialTimeo
     }
   }
 
-  // If all attempts failed
+  // If all attempts failed (circuit completely tripped after retries exhausted)
   if (!bypassCircuitBreaker) {
     markAzureAsUnreachable();
   }
@@ -438,8 +479,8 @@ async function robustFetchWithRetry(url: string, options: any = {}, initialTimeo
 // --- COLD START AUTO-WAKEUPS IN BACKGROUND ---
 async function prewarmAzureWebService() {
   const pingUrls = [
-    "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-files?folder=tenants&clientName=tenantB",
-    "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-files?folder=images&clientName=tenantB"
+    "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-files?folder=tenants&clientName=tenantA",
+    "https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-files?folder=images&clientName=tenantA"
   ];
   for (const url of pingUrls) {
     console.log(`[Warmup] Triggering background pre-warmup ping to: ${url}`);
@@ -588,47 +629,11 @@ const defaultElsaParts = [
 
 function initializePartsCache() {
   try {
-    let cacheData: any = {};
-    if (fs.existsSync(cacheFilePath)) {
-      cacheData = JSON.parse(fs.readFileSync(cacheFilePath, "utf-8"));
-    }
-    
-    // Seed default parts for Axe in both "Axe" and lowercase "axe" versions
-    if (!cacheData["Axe"]) {
-      cacheData["Axe"] = defaultAxeParts;
-    }
-    if (!cacheData["axe"]) {
-      cacheData["axe"] = defaultAxeParts.map(p => ({ ...p, modelName: "axe" }));
-    }
-
-    // Seed default parts for Pipe
-    if (!cacheData["Pipe"]) {
-      cacheData["Pipe"] = defaultPipeParts;
-    }
-    if (!cacheData["pipe"]) {
-      cacheData["pipe"] = defaultPipeParts.map(p => ({ ...p, modelName: "pipe" }));
-    }
-
-    // Seed default parts for Chest
-    if (!cacheData["Chest"]) {
-      cacheData["Chest"] = defaultChestParts;
-    }
-    if (!cacheData["chest"]) {
-      cacheData["chest"] = defaultChestParts.map(p => ({ ...p, modelName: "chest" }));
-    }
-
-    // Seed default parts for ELSA
-    if (!cacheData["ELSA 2 Caliper Guide Pin 35X144mm"]) {
-      cacheData["ELSA 2 Caliper Guide Pin 35X144mm"] = defaultElsaParts;
-    }
-    if (!cacheData["elsa 2 caliper guide pin 35x144mm"]) {
-      cacheData["elsa 2 caliper guide pin 35x144mm"] = defaultElsaParts.map(p => ({ ...p, modelName: "elsa 2 caliper guide pin 35x144mm" }));
-    }
-    
+    const cacheData: any = {};
     fs.writeFileSync(cacheFilePath, JSON.stringify(cacheData, null, 2), "utf-8");
-    console.log("✅ Model parts cache initialized and seeded.");
+    console.log("✅ Model parts cache initialized and cleared of mock seeds.");
   } catch (err) {
-    console.error("⚠️ Failed to initialize or seed parts cache:", err);
+    console.error("⚠️ Failed to initialize parts cache:", err);
   }
 }
 
@@ -670,6 +675,18 @@ async function startServer() {
   initializePartsCache();
   const app = express();
   const PORT = 3000;
+
+  app.use((req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,POST,PUT,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Range");
+    res.setHeader("Access-Control-Expose-Headers", "Content-Length, Content-Type, ETag, Accept-Ranges, Content-Range");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(204);
+    }
+    next();
+  });
+
 
   app.use(express.json({ limit: "100mb" }));
   app.use(express.urlencoded({ limit: "100mb", extended: true }));
@@ -733,15 +750,16 @@ async function startServer() {
         }
 
         const text = await response.text();
-        if (!text || text.trim() === "") return null;
+        if (!text || text.trim() === "") {
+          saveCachedParts(name, []);
+          return [];
+        }
         
         try {
           const data = JSON.parse(text);
           // Standardize response to part objects
           const rawParts = Array.isArray(data) ? data : (data.parts || data.data || data.items || []);
           
-          if (rawParts.length === 0) return null;
-
           const parts = rawParts.map((item: any) => ({
             id: (item.partId || item.PartId || Math.random().toString(36).substr(2, 9)).toString(),
             modelName: name,
@@ -751,7 +769,7 @@ async function startServer() {
             presentAtSite: item.presentAtSite ?? item.PresentAtSite ?? true // Default to true if not provided by API
           }));
 
-          // Sync successful response to our local file cache
+          // Sync successful response to our local file cache (even if parts is empty, because that is what is in the DB)
           saveCachedParts(name, parts);
           return parts;
         } catch (jsonErr) {
@@ -765,10 +783,10 @@ async function startServer() {
     };
 
     const cachedParts = getCachedParts(modelName);
-    const hasCache = cachedParts && cachedParts.length > 0;
+    const hasCache = cachedParts !== null;
 
     if (hasCache) {
-      console.log(`[Cache First] Serving model parts instantly from cache for: ${modelName}`);
+      console.log(`[Cache First] Serving model parts instantly from cache for: ${modelName} (${cachedParts.length} parts)`);
 
       // Asynchronously refresh in the background with a larger timeout to avoid timeout warnings
       (async () => {
@@ -786,13 +804,13 @@ async function startServer() {
       // Use strictly the modelName (usually the filename) for the parts lookup with a robust timeout
       let parts = await tryFetchParts(modelName, 15000, 2, !hasCache);
 
-      // FALLBACK: Serve cached or pre-seeded data if primary API did not return parts or is slow
-      if (!parts || parts.length === 0) {
-        console.log(`Serving cached and seeded backup for model: ${modelName}`);
+      // FALLBACK: Only serve cached backup if primary API request failed entirely (returned null)
+      if (parts === null) {
+        console.log(`Fetch failed from API, checking cached backup for model: ${modelName}`);
         parts = getCachedParts(modelName);
       }
 
-      if (parts && parts.length > 0) {
+      if (parts) {
         return res.json(parts);
       }
       
@@ -810,43 +828,81 @@ async function startServer() {
     const productName = req.query.productName as string;
     if (!productName) return res.status(400).json({ error: "productName is required" });
 
-    // Use the original productName endpoint which returns an array and allows distinguishing "not found" from "0 quantity"
+    const inventoryCacheDir = path.join(azureCacheDir, "inventory");
+    if (!fs.existsSync(inventoryCacheDir)) {
+      try {
+        fs.mkdirSync(inventoryCacheDir, { recursive: true });
+      } catch (e) {}
+    }
+    const cachePath = path.join(inventoryCacheDir, `inventory_${encodeURIComponent(productName.toLowerCase())}.json`);
+    const hasCache = fs.existsSync(cachePath);
+
+    // Serve from cache immediately if we have it and the Azure service is unreachable,
+    // or if the cached file is less than 2 minutes old.
+    if (hasCache) {
+      try {
+        const stats = fs.statSync(cachePath);
+        const ageMs = Date.now() - stats.mtimeMs;
+        // If the cache is less than 2 minutes old, or if circuit breaker is already active
+        if (ageMs < 120000 || isAzureUnreachable) {
+          const cachedValue = fs.readFileSync(cachePath, "utf8");
+          console.log(`[Cache First] Serving inventory from cache for: ${productName} (age: ${Math.round(ageMs/1000)}s)`);
+          return res.send(cachedValue);
+        }
+      } catch (cacheReadErr) {
+        console.error("Failed reading/parsing inventory cache:", cacheReadErr);
+      }
+    }
+
     const azureApiUrl = `https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/Inventory/productName/${encodeURIComponent(productName)}`;
 
     try {
       console.log(`Fetching inventory from Azure API: ${azureApiUrl}`);
-      const response = await robustFetchWithRetry(azureApiUrl, {}, 4500, 2, true);
+      // Use circuit breaker so we don't hold up client when downstream is down.
+      // Use resilient timeout (15000ms) with 2 retries to handle cold starts gracefully
+      const response = await robustFetchWithRetry(azureApiUrl, {}, 15000, 2, false);
       
       if (!response.ok) {
         throw new Error(`Azure API responded with status: ${response.status}`);
       }
 
       const text = await response.text();
-      if (!text || text.trim() === "") return res.send("10"); // Default to 10 if empty
+      let finalQuantity = "10";
       
-      let data;
+      if (text && text.trim() !== "") {
+        let data;
+        try {
+          data = JSON.parse(text);
+          if (Array.isArray(data) && data.length === 0) {
+            finalQuantity = "10";
+          } else if (Array.isArray(data) && data[0]) {
+            const quantity = data[0].quantity ?? data[0].Quantity ?? 0;
+            finalQuantity = quantity.toString();
+          }
+        } catch (jsonErr) {
+          console.error("Failed to parse inventory JSON:", jsonErr);
+        }
+      }
+
+      // Save to cache
       try {
-        data = JSON.parse(text);
-      } catch (jsonErr) {
-        console.error("Failed to parse inventory JSON:", jsonErr);
-        return res.send("10");
-      }
-      
-      // If the array is empty, the product is not in the inventory system, assume it's in stock
-      if (Array.isArray(data) && data.length === 0) {
-        return res.send("10");
-      }
+        fs.writeFileSync(cachePath, finalQuantity, "utf8");
+      } catch (writeErr) {}
 
-      // If we have data, get the quantity from the first item
-      if (Array.isArray(data) && data[0]) {
-        const quantity = data[0].quantity ?? data[0].Quantity ?? 0;
-        return res.send(quantity.toString());
-      }
-
-      res.send("10");
+      return res.send(finalQuantity);
     } catch (err: any) {
       console.error("Azure Inventory API Error:", err.message);
-      res.status(500).send("10"); // Default to 10 on error
+      
+      // FALLBACK TO CACHE ON ERROR
+      if (hasCache) {
+        try {
+          const cachedValue = fs.readFileSync(cachePath, "utf8");
+          console.log(`[Cache Fallback] Serving cached inventory after API error for: ${productName}`);
+          return res.send(cachedValue);
+        } catch (readErr) {}
+      }
+      
+      res.send("10"); // Default to 10 on error
     }
   });
 
@@ -1008,7 +1064,7 @@ async function startServer() {
         data = {
           productId: deterministicUUID,
           tenantId: "5f6c7a95-3d07-45c7-bcf6-33da948817d1",
-          tenantName: "tenantB",
+          tenantName: "tenantA",
           sku: `SKU-${cleanModelName.toUpperCase()}`,
           productCategory: "3D Assets",
           productTitle: cleanModelName,
@@ -1035,17 +1091,17 @@ async function startServer() {
     const azureApiUrl = `https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/Products/${encodeURIComponent(productId)}/view`;
     try {
       console.log(`PUT request for view proxy: ${azureApiUrl}`);
-      const response = await fetchWithTimeout(azureApiUrl, {
+      const response = await robustFetchWithRetry(azureApiUrl, {
         method: "PUT"
-      }, 15000);
+      }, 3000, 1, false);
       if (!response.ok) {
         return res.status(response.status).send(await response.text());
       }
       const data = await response.json();
       res.json(data);
     } catch (err: any) {
-      console.error(`Error in view proxy for product ${productId}:`, err);
-      res.status(500).json({ error: "Failed to increment view", details: err.message });
+      console.error(`Error in view proxy for product ${productId}:`, err.message || err);
+      res.status(503).json({ error: "Failed to increment view", details: err.message });
     }
   });
 
@@ -1054,17 +1110,17 @@ async function startServer() {
     const azureApiUrl = `https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/Products/${encodeURIComponent(productId)}/like`;
     try {
       console.log(`PUT request for like proxy: ${azureApiUrl}`);
-      const response = await fetchWithTimeout(azureApiUrl, {
+      const response = await robustFetchWithRetry(azureApiUrl, {
         method: "PUT"
-      }, 15000);
+      }, 3000, 1, false);
       if (!response.ok) {
         return res.status(response.status).send(await response.text());
       }
       const data = await response.json();
       res.json(data);
     } catch (err: any) {
-      console.error(`Error in like proxy for product ${productId}:`, err);
-      res.status(500).json({ error: "Failed to like product", details: err.message });
+      console.error(`Error in like proxy for product ${productId}:`, err.message || err);
+      res.status(503).json({ error: "Failed to like product", details: err.message });
     }
   });
 
@@ -1073,56 +1129,88 @@ async function startServer() {
     const azureApiUrl = `https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/Products/${encodeURIComponent(productId)}/dislike`;
     try {
       console.log(`PUT request for dislike proxy: ${azureApiUrl}`);
-      const response = await fetchWithTimeout(azureApiUrl, {
+      const response = await robustFetchWithRetry(azureApiUrl, {
         method: "PUT"
-      }, 15000);
+      }, 3000, 1, false);
       if (!response.ok) {
         return res.status(response.status).send(await response.text());
       }
       const data = await response.json();
       res.json(data);
     } catch (err: any) {
-      console.error(`Error in dislike proxy for product ${productId}:`, err);
-      res.status(500).json({ error: "Failed to dislike product", details: err.message });
+      console.error(`Error in dislike proxy for product ${productId}:`, err.message || err);
+      res.status(503).json({ error: "Failed to dislike product", details: err.message });
     }
   });
 
   // NEW: API Route for categories by tenant name
   app.get("/api/categories/:tenantName", async (req, res) => {
     const { tenantName } = req.params;
+    const categoriesCacheDir = path.join(azureCacheDir, "categories");
+    if (!fs.existsSync(categoriesCacheDir)) {
+      try {
+        fs.mkdirSync(categoriesCacheDir, { recursive: true });
+      } catch (e) {}
+    }
+    const cachePath = path.join(categoriesCacheDir, `categories_${encodeURIComponent(tenantName.toLowerCase())}.json`);
+    const hasCache = fs.existsSync(cachePath);
+
+    // Serve from cache immediately if we have it and the Azure service is unreachable,
+    // or if the cached file is less than 5 minutes old.
+    if (hasCache) {
+      try {
+        const stats = fs.statSync(cachePath);
+        const ageMs = Date.now() - stats.mtimeMs;
+        if (ageMs < 300000 || isAzureUnreachable) { // 5 minutes fresh
+          const cachedData = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+          console.log(`[Cache First] Serving categories from cache for tenant: ${tenantName} (age: ${Math.round(ageMs/1000)}s)`);
+          return res.json(cachedData);
+        }
+      } catch (cacheErr) {
+        console.error("Failed reading categories cache:", cacheErr);
+      }
+    }
+
     const azureApiUrl = `https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/categories/tenantName/${encodeURIComponent(tenantName)}`;
 
     try {
       console.log(`Fetching categories from Azure API: ${azureApiUrl}`);
-      let response;
-      try {
-        response = await fetchWithTimeout(azureApiUrl, {}, 45000);
-      } catch (err) {
-        console.warn(`Initial categories fetch threw error, retrying...`, err);
-        response = await fetchWithTimeout(azureApiUrl, {}, 60000);
-      }
-      
-      // Also retry if not ok but didn't throw
-      if (!response.ok) {
-        console.warn(`Initial categories fetch returned not-ok status, retrying...`);
-        response = await fetchWithTimeout(azureApiUrl, {}, 60000);
-      }
+      // Use robustFetchWithRetry instead of bare fetchWithTimeout for exponential backoff & circuit breaker support
+      // Set reasonable initial timeout (e.g. 15000ms), max 2 retries, use circuit breaker
+      const response = await robustFetchWithRetry(azureApiUrl, {}, 15000, 2, false);
 
       if (!response.ok) {
         throw new Error(`Azure API responded with status: ${response.status}`);
       }
 
       const data = await response.json();
+      
+      // Save to cache
+      try {
+        fs.writeFileSync(cachePath, JSON.stringify(data, null, 2), "utf8");
+      } catch (writeErr) {}
+
       res.json(data);
     } catch (err: any) {
-      console.error("Azure Categories API Error:", err);
-      res.status(500).json({ error: "Failed to fetch categories from Azure", details: err.message });
+      console.error("Azure Categories API Error:", err.message || err);
+      
+      // Serve from cache as fallback
+      if (hasCache) {
+        try {
+          const cachedData = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+          console.log(`[Cache Fallback] Serving cached categories after API error for tenant: ${tenantName}`);
+          return res.json(cachedData);
+        } catch (readErr) {}
+      }
+
+      // Default/Empty array fallback to prevent app crashing
+      res.json([]);
     }
   });
 
   // NEW: Robust Helper for serving files resiliently with caching and fuzzy-matching fallbacks
   async function handleGetFileResiliently(folder: string, fileName: string, clientName: string, res: any) {
-    const activeClient = clientName || "tenantB";
+    const activeClient = clientName || "tenantA";
     
     // Step 0: Pre-resolve virtual/relative filenames using the metadata list if available
     let targetFileName = fileName;
@@ -1165,13 +1253,23 @@ async function startServer() {
         res.setHeader("Content-Type", mimeTypes[ext]);
       }
       res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Cache-Control", "public, max-age=31536000");
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
       
       return res.sendFile(path.resolve(localFilePath));
     }
 
-    // Step 3: Call Azure since we had a cache miss (requesting targetFileName)
-    const azureFileUrl = `https://fbx-studio-bnecb0euepare0ew.westeurope-01.azurewebsites.net/api/files/get-file?folder=${folder}&fileName=${encodeURIComponent(targetFileName)}&clientName=${activeClient}`;
+    // Step 3: Call R2 directly via static file path since we had a cache miss (requesting targetFileName)
+    let r2Path = "";
+    if (folder.startsWith("tenants")) {
+      if (folder.includes("/")) {
+        r2Path = `${folder}/${targetFileName}`;
+      } else {
+        r2Path = `tenants/${activeClient}/${targetFileName}`;
+      }
+    } else {
+      r2Path = `${folder}/${targetFileName}`;
+    }
+    const azureFileUrl = r2PublicUrlFromKey(r2Path);
     try {
       console.log(`[Proxy] Resilient request for ${folder}/${targetFileName} (original: ${fileName}). URL: ${azureFileUrl} (cacheStatus: MISS)`);
       
@@ -1231,7 +1329,7 @@ async function startServer() {
         res.setHeader("Content-Type", mimeTypes[ext]);
       }
       res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Cache-Control", "public, max-age=31536000");
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
       return res.send(buffer);
     } catch (err: any) {
       console.warn(`[Proxy Fallback] Failed to fetch live file ${targetFileName} (${err.message}). Checking disk cache...`);
@@ -1257,7 +1355,7 @@ async function startServer() {
           res.setHeader("Content-Type", mimeTypes[ext]);
         }
         res.setHeader("Access-Control-Allow-Origin", "*");
-        res.setHeader("Cache-Control", "public, max-age=31536000");
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
         
         return res.sendFile(path.resolve(fuzzyFilePath));
       } else if (fs.existsSync(localFilePath)) {
@@ -1279,7 +1377,7 @@ async function startServer() {
           res.setHeader("Content-Type", mimeTypes[ext]);
         }
         res.setHeader("Access-Control-Allow-Origin", "*");
-        res.setHeader("Cache-Control", "public, max-age=31536000");
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
         
         return res.sendFile(path.resolve(localFilePath));
       } else {
@@ -1301,22 +1399,32 @@ async function startServer() {
       return handleGetFileResiliently(folder as string, fileName as string, clientName as string, res);
     }
 
-    const activeClient = clientName || "tenantB";
-    const cachePath = getLocalCachedListPath(folder as string, activeClient as string);
+    const activeClient = (clientName as string) || "tenantA";
+    const cachePath = getLocalCachedListPath(folder as string, activeClient);
     const hasCache = fs.existsSync(cachePath);
 
-    // Helper to rewrite Azure URLs to local proxy
+    // Helper to rewrite Azure/API URLs to direct R2 for images/textures, and proxy for others
     const rewriteItem = (item: any) => {
       if (typeof item === 'string') return item;
       const fileNameStr = item.fileName || item.FileName || item.name || item.Name || "";
       if (fileNameStr) {
         const effectiveFolder = folder as string;
-        const proxyUrl = `/api/files/get-file?folder=${encodeURIComponent(effectiveFolder)}&fileName=${encodeURIComponent(fileNameStr)}&clientName=${encodeURIComponent(activeClient as string)}`;
+        let r2Path = "";
+        if (effectiveFolder.startsWith("tenants")) {
+          if (effectiveFolder.includes("/")) {
+            r2Path = `${effectiveFolder}/${fileNameStr}`;
+          } else {
+            r2Path = `tenants/${activeClient}/${fileNameStr}`;
+          }
+        } else {
+          r2Path = `${effectiveFolder}/${fileNameStr}`;
+        }
+        const finalUrl = r2PublicUrlFromKey(r2Path);
         
         return {
           ...item,
-          url: proxyUrl,
-          Url: proxyUrl
+          url: finalUrl,
+          Url: finalUrl
         };
       }
       return item;
@@ -1437,7 +1545,7 @@ async function startServer() {
     const { folder, modelName, clientName } = req.query;
     if (!folder || !modelName) return res.status(400).json({ error: "folder and modelName are required" });
 
-    const activeClient = (clientName as string) || "tenantB";
+    const activeClient = (clientName as string) || "tenantA";
     const cachePath = getLocalCachedListPath(folder as string, activeClient);
 
     const imageExtensions = [".png", ".jpg", ".jpeg", ".webp", ".tga", ".dds", ".gif", ".bmp"];
@@ -1474,19 +1582,29 @@ async function startServer() {
       return !isAlphanumeric;
     };
 
-    // Helper to rewrite Azure URLs to local proxy
+    // Helper to rewrite Azure/API URLs to direct R2 for images/textures, and proxy for others
     const rewriteItem = (item: any) => {
       if (typeof item === 'string') return item;
       const fileName = item.fileName || item.FileName || item.name || item.Name || "";
       if (fileName) {
         const effectiveFolder = folder as string;
-        const proxyUrl = `/api/files/get-file?folder=${encodeURIComponent(effectiveFolder)}&clientName=${encodeURIComponent(activeClient)}&fileName=${encodeURIComponent(fileName)}`;
+        let r2Path = "";
+        if (effectiveFolder.startsWith("tenants")) {
+          if (effectiveFolder.includes("/")) {
+            r2Path = `${effectiveFolder}/${fileName}`;
+          } else {
+            r2Path = `tenants/${activeClient}/${fileName}`;
+          }
+        } else {
+          r2Path = `${effectiveFolder}/${fileName}`;
+        }
+        const finalUrl = r2PublicUrlFromKey(r2Path);
         
         return {
           ...item,
           FileName: fileName,
-          url: proxyUrl,
-          Url: proxyUrl
+          url: finalUrl,
+          Url: finalUrl
         };
       }
       return item;
@@ -1620,7 +1738,7 @@ async function startServer() {
     const { folder, fileName, clientName } = req.query;
     if (!folder || !fileName) return res.status(400).send("folder and fileName are required");
 
-    await handleGetFileResiliently(folder as string, fileName as string, (clientName as string) || "tenantB", res);
+    await handleGetFileResiliently(folder as string, fileName as string, (clientName as string) || "tenantA", res);
   });
 
   // API Route for translation
@@ -2033,8 +2151,8 @@ async function startServer() {
             name: obj.Key?.split("/").pop() || "Unknown",
             size: obj.Size,
             lastModified: obj.LastModified,
-            // Use our proxy endpoint instead of a direct signed URL to avoid CORS issues
-            url: `/api/r2/proxy?key=${encodeURIComponent(obj.Key || "")}`
+            // Use our direct public R2 URL
+            url: r2PublicUrlFromKey(obj.Key || "")
           };
         });
 
@@ -2082,7 +2200,7 @@ async function startServer() {
           return {
             key: obj.Key,
             name: obj.Key?.split("/").pop() || "Unknown",
-            url: `/api/r2/proxy?key=${encodeURIComponent(obj.Key || "")}`
+            url: r2PublicUrlFromKey(obj.Key || "")
           };
         });
 
@@ -2187,11 +2305,14 @@ async function startServer() {
         const key = obj.Key || "";
         const fileName = path.basename(key);
         
+        const publicUrl = r2PublicUrlFromKey(key);
+
         return {
           FileName: fileName,
           FullPath: key,
-          ContentType: `image/${path.extname(key).slice(1)}`.replace("image/jpg", "image/jpeg"),
-          Url: `/api/r2/proxy?key=${encodeURIComponent(key)}`
+          ContentType: getMimeTypeByFileName(key),
+          url: publicUrl,
+          Url: publicUrl
         };
       });
 
@@ -2199,124 +2320,6 @@ async function startServer() {
     } catch (error: any) {
       console.error("Error in get-images-by-model:", error);
       res.status(500).json({ error: "Failed to fetch images", details: error.message });
-    }
-  });
-
-  // Proxy route to fetch files from R2 and serve them from our domain (bypasses CORS)
-  app.get("/api/r2/proxy", async (req, res) => {
-    const key = req.query.key as string;
-    if (!key) return res.status(400).send("Key is required");
-
-    try {
-      const bucket = process.env.R2_BUCKET_NAME;
-      if (!bucket) throw new Error("R2_BUCKET_NAME is not configured");
-
-      const client = getR2Client();
-      if (!client) throw new Error("R2 credentials or Account ID missing");
-
-      const command = new GetObjectCommand({
-        Bucket: bucket,
-        Key: key,
-      });
-
-      console.log(`Proxying R2 file: Bucket=${bucket}, Key=${key}`);
-      const response = await client.send(command);
-      
-      // Set Content-Type from response or fallback based on extension
-      let contentType = response.ContentType;
-      if (!contentType || contentType === 'application/octet-stream') {
-        const ext = path.extname(key).toLowerCase();
-        const mimeTypes: Record<string, string> = {
-          '.png': 'image/png',
-          '.jpg': 'image/jpeg',
-          '.jpeg': 'image/jpeg',
-          '.webp': 'image/webp',
-          '.tga': 'image/tga',
-          '.dds': 'image/vnd.ms-dds',
-          '.fbx': 'application/octet-stream'
-        };
-        contentType = mimeTypes[ext] || 'application/octet-stream';
-      }
-      
-      res.setHeader("Content-Type", contentType);
-      
-      if (response.ContentLength) {
-        res.setHeader("Content-Length", response.ContentLength.toString());
-      }
-      
-      // Add CORS and caching headers
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Cache-Control", "public, max-age=31536000");
-
-      // Stream the body to the response
-      const body = response.Body as any;
-      if (body && typeof body.pipe === 'function') {
-        try {
-          // Use pipeline to handle the stream and ensure proper cleanup
-          await pipeline(body, res);
-        } catch (streamError: any) {
-          // If headers were already sent, we can't send a 500 error response.
-          if (res.headersSent) {
-            // "Premature close" usually means the client (browser) disconnected before the stream finished.
-            // This is common when navigating or when an image is no longer needed.
-            if (streamError.message === 'Premature close' || streamError.code === 'ERR_STREAM_PREMATURE_CLOSE') {
-              // Log as a warning/info instead of an error to reduce noise
-              console.warn(`Stream for "${key}" was closed prematurely (likely client disconnect)`);
-            } else {
-              console.error(`Stream error after headers sent for "${key}":`, streamError.message);
-            }
-            
-            if (!res.writableEnded) {
-              res.end();
-            }
-          } else {
-            throw streamError;
-          }
-        }
-      } else if (body && typeof body.transformToByteArray === 'function') {
-        const bytes = await body.transformToByteArray();
-        res.send(Buffer.from(bytes));
-      } else if (body && body.getReader) {
-        // Fallback if it's a Web Stream (e.g. in some environments)
-        const reader = body.getReader();
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            res.write(value);
-          }
-          res.end();
-        } catch (readerError: any) {
-          if (res.headersSent) {
-            console.error(`Reader error after headers sent for "${key}":`, readerError.message);
-            res.end();
-          } else {
-            throw readerError;
-          }
-        }
-      } else {
-        if (!res.headersSent) {
-          res.status(500).send("Unsupported body type from R2 response");
-        } else {
-          res.end();
-        }
-      }
-    } catch (error: any) {
-      console.error(`Proxy error for key "${key}":`, error);
-      if (error.stack) console.error(error.stack);
-      
-      if (!res.headersSent) {
-        if (error.name === "NoSuchKey") {
-          res.status(404).send(`File not found in R2: ${key}`);
-        } else {
-          res.status(500).send(`Failed to proxy file: ${error.message}`);
-        }
-      } else {
-        // Headers already sent, just end the response
-        if (!res.writableEnded) {
-          res.end();
-        }
-      }
     }
   });
 

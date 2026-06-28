@@ -31,15 +31,21 @@ export interface Translations {
   noDescription: string;
   viewDetails: string;
   modelParts: string;
+  noRelatedParts: string;
   labelPartKey: string;
   labelPartName: string;
   labelPartDescription: string;
   inStock: string;
   inStockCount: string;
+  price?: string;
   flipY: string;
   wireframe: string;
   textureResolution?: string;
   textureAnisotropy?: string;
+  offlineCacheTitle?: string;
+  offlineCachePaused?: string;
+  offlineCacheDownloading?: string;
+  offlineCacheDone?: string;
 }
 
 export const translations: Record<Language, Translations> = {
@@ -73,15 +79,21 @@ export const translations: Record<Language, Translations> = {
     noDescription: "No description available",
     viewDetails: "View Details",
     modelParts: "Relateble",
+    noRelatedParts: "No related parts for this product",
     labelPartKey: "Key",
     labelPartName: "Name",
     labelPartDescription: "Description",
     inStock: "In Stock",
     inStockCount: "Qty",
+    price: "Price",
     flipY: "Flip UV (Y-Axis)",
     wireframe: "Wireframe mode",
     textureResolution: "Texture Quality / Resolution",
     textureAnisotropy: "Anisotropic Filtering (Sharpness)",
+    offlineCacheTitle: "Offline Content Cache",
+    offlineCachePaused: "Snoozed",
+    offlineCacheDownloading: "Caching Assets...",
+    offlineCacheDone: "Offline Ready",
   },
   he: {
     all: "הכל",
@@ -113,15 +125,21 @@ export const translations: Record<Language, Translations> = {
     noDescription: "אין פירוט",
     viewDetails: "צפה בפרטים",
     modelParts: "חלקים קשורים",
+    noRelatedParts: "אין חלקים מקושרים למוצר זה",
     labelPartKey: "מפתח",
     labelPartName: "שם",
     labelPartDescription: "תיאור",
     inStock: "במלאי",
     inStockCount: "כמות",
+    price: "מחיר",
     flipY: "היפוך ציר Y של הטקסטורה (UV)",
     wireframe: "תצוגת רשת קווים (Wireframe)",
     textureResolution: "איכות ורזולוציית טקסטורות",
     textureAnisotropy: "סינון אנאיזוטרופי (חדות וטשטוש)",
+    offlineCacheTitle: "תוכן שמור לאופליין",
+    offlineCachePaused: "בהשהייה",
+    offlineCacheDownloading: "שומר קבצים ברקע...",
+    offlineCacheDone: "זמין במלואו לאופליין",
   },
   ar: {
     all: "الكل",
@@ -153,15 +171,21 @@ export const translations: Record<Language, Translations> = {
     noDescription: "لا يوجد وصف متاح",
     viewDetails: "عرض التفاصيل",
     modelParts: "أجزاء ذات صلة",
+    noRelatedParts: "لا توجد أجزاء ذات صلة لهذا المنتج",
     labelPartKey: "مفتاح",
     labelPartName: "اسم",
     labelPartDescription: "وصف",
     inStock: "في المخزن",
     inStockCount: "الكمية",
+    price: "السعر",
     flipY: "عكس الـ UV (محور Y)",
     wireframe: "مظهر شبكي (Wireframe)",
     textureResolution: "دقة وجودة الأنسجة",
     textureAnisotropy: "تصفية تباين الاتجاهات (مستوى الحدوة)",
+    offlineCacheTitle: "ذاكرة التخزين المؤقت للأوفلاين",
+    offlineCachePaused: "موقوف مؤقتًا",
+    offlineCacheDownloading: "حفظ الكائنات في الخلفية...",
+    offlineCacheDone: "جاهز للعمل دون اتصال",
   },
   ru: {
     all: "Все",
@@ -193,14 +217,20 @@ export const translations: Record<Language, Translations> = {
     noDescription: "Описание отсутствует",
     viewDetails: "Посмотреть детали",
     modelParts: "Связанные части",
+    noRelatedParts: "Нет связанных частей для этого продукта",
     labelPartKey: "Ключ",
     labelPartName: "Имя",
     labelPartDescription: "Описание",
     inStock: "В наличии",
     inStockCount: "Кол-во",
+    price: "Цена",
     flipY: "Зеркально UV (ось Y)",
     wireframe: "Каркасный вид (Wireframe)",
     textureResolution: "Качество и разрешение текстур",
     textureAnisotropy: "Анизотропная фильтрация (Резкость)",
+    offlineCacheTitle: "Офлайн контентный кэш",
+    offlineCachePaused: "На паузе",
+    offlineCacheDownloading: "Кэширование файлов в фоне...",
+    offlineCacheDone: "Полностью доступно офлайн",
   },
 };

@@ -366,7 +366,7 @@ export const translateText = async (text: string, targetLanguage: string): Promi
   const cacheKey = `${langCode}:${trimmedText}`;
   if (translationCache[cacheKey]) return translationCache[cacheKey];
 
-  if (isAlreadyInLanguage(trimmedText, langCode) || targetLanguage === 'English') {
+  if (isAlreadyInLanguage(trimmedText, langCode)) {
     translationCache[cacheKey] = trimmedText;
     return trimmedText;
   }

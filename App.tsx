@@ -2,10 +2,10 @@
 import React, { useState, Suspense, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Environment, Float, Html, Center } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera, Environment, Float, Html, Center, useProgress } from '@react-three/drei';
 import * as THREE from 'three';
 import './types';
-import FBXModel from './components/FBXModel';
+import FBXModel, { generateSingleMeshUVSVG } from './components/FBXModel';
 import { ModelErrorBoundary } from './components/ModelErrorBoundary';
 import Sidebar from './components/Sidebar';
 import CameraControls from './components/CameraControls';
@@ -14,34 +14,126 @@ import { speakText, stopSpeaking, translateText, translateBatch } from './servic
 import { Language, translations } from './src/translations';
 import { parseTextureSets } from './Parsetexturesets';
 
+const cleanEscapedQuotes = (str: string): string => {
+  if (!str) return '';
+  // First, resolve double-escaped quotes like \\' or \\\"
+  let cleaned = str.replace(/\\+(['"])/g, '$1');
+  // Convert literal text "\r\n" or "\n" to real newlines
+  cleaned = cleaned.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n');
+  // Convert all actual newline characters to <br /> tags for HTML rendering
+  cleaned = cleaned.replace(/\r\n/g, '<br />').replace(/\n/g, '<br />');
+  return cleaned;
+};
+
 const CameraHandler: React.FC<{ 
   targetView: { pos: THREE.Vector3, lookAt: THREE.Vector3 } | null, 
   controlsRef: any,
-  activePartMesh?: THREE.Mesh | null
-}> = ({ targetView, controlsRef, activePartMesh }) => {
+  activePartMesh?: THREE.Mesh | null,
+  orbitDirection?: 'up' | 'down' | 'left' | 'right' | null
+}> = ({ targetView, controlsRef, activePartMesh, orbitDirection }) => {
   const { camera } = useThree();
+
+  // Store dynamic props in refs to avoid R3F stale closures in useFrame
+  const orbitDirectionRef = useRef(orbitDirection);
+  const targetViewRef = useRef(targetView);
+  const activePartMeshRef = useRef(activePartMesh);
+
+  useEffect(() => {
+    orbitDirectionRef.current = orbitDirection;
+  }, [orbitDirection]);
+
+  useEffect(() => {
+    targetViewRef.current = targetView;
+  }, [targetView]);
+
+  useEffect(() => {
+    activePartMeshRef.current = activePartMesh;
+  }, [activePartMesh]);
+
   useFrame(() => {
+    const currentOrbitDirection = orbitDirectionRef.current;
+    const currentTargetView = targetViewRef.current;
+    const currentActivePartMesh = activePartMeshRef.current;
+
     if (controlsRef.current) {
-      if (activePartMesh) {
-        // Calculate current world position of the mesh for dynamic tracking
-        const box = new THREE.Box3().setFromObject(activePartMesh);
-        const center = new THREE.Vector3();
-        box.getCenter(center);
-        
-        // Target the center of the mesh
-        controlsRef.current.target.lerp(center, 0.02);
-        
-        // If we have a targetView, maintain the relative offset from the moving center
-        if (targetView) {
-          const offset = targetView.pos.clone().sub(targetView.lookAt);
-          const dynamicTargetPos = center.clone().add(offset);
-          camera.position.lerp(dynamicTargetPos, 0.02);
+      // 1. Manual continuous orbiting via D-pad arrows
+      if (currentOrbitDirection) {
+        try {
+          const controls = controlsRef.current;
+          const target = controls.target || new THREE.Vector3(0, 0, 0);
+          const offset = camera.position.clone().sub(target);
+          const speed = 0.035; // smooth rotation speed in radians per frame
+
+          if (currentOrbitDirection === 'left') {
+            offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), speed);
+          } else if (currentOrbitDirection === 'right') {
+            offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), -speed);
+          } else if (currentOrbitDirection === 'up') {
+            const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+            offset.applyAxisAngle(right, speed);
+          } else if (currentOrbitDirection === 'down') {
+            const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+            offset.applyAxisAngle(right, -speed);
+          }
+
+          camera.position.copy(target).add(offset);
+          camera.lookAt(target);
+          controls.update();
+        } catch (err) {
+          console.warn("[CameraHandler] Failed manual orbit:", err);
         }
-      } else if (targetView) {
-        camera.position.lerp(targetView.pos, 0.02);
-        controlsRef.current.target.lerp(targetView.lookAt, 0.02);
+        return; // Skip default lerping behavior during manual orbit
       }
-      controlsRef.current.update();
+
+      let trackingSucceeded = false;
+      
+      // Fully validate that the mesh is valid, loaded, and not disposed/stale
+      if (
+        currentActivePartMesh && 
+        currentActivePartMesh.isMesh && 
+        currentActivePartMesh.geometry && 
+        currentActivePartMesh.geometry.attributes && 
+        currentActivePartMesh.geometry.attributes.position &&
+        currentActivePartMesh.parent
+      ) {
+        try {
+          // Calculate current world position of the mesh for dynamic tracking
+          const box = new THREE.Box3();
+          box.setFromObject(currentActivePartMesh);
+          const center = new THREE.Vector3();
+          box.getCenter(center);
+          
+          // Target the center of the mesh
+          controlsRef.current.target.lerp(center, 0.02);
+          
+          // If we have a targetView, maintain the relative offset from the moving center
+          if (currentTargetView) {
+            const offset = currentTargetView.pos.clone().sub(currentTargetView.lookAt);
+            const dynamicTargetPos = center.clone().add(offset);
+            camera.position.lerp(dynamicTargetPos, 0.02);
+          }
+          
+          trackingSucceeded = true;
+        } catch (err) {
+          console.warn("[CameraHandler] Failed to calculate dynamic tracking for activePartMesh:", err);
+        }
+      }
+
+      // Fallback if no active part tracking is active or if tracking failed/mesh is stale
+      if (!trackingSucceeded && currentTargetView) {
+        try {
+          camera.position.lerp(currentTargetView.pos, 0.02);
+          controlsRef.current.target.lerp(currentTargetView.lookAt, 0.02);
+        } catch (err) {
+          console.warn("[CameraHandler] Failed to lerp targetView:", err);
+        }
+      }
+
+      try {
+        controlsRef.current.update();
+      } catch (err) {
+        console.warn("[CameraHandler] Failed to update controls:", err);
+      }
     }
   });
   return null;
@@ -77,6 +169,44 @@ const isModelTextureMatch = (fileName: string, modelName: string): boolean => {
   return !isAlphanumeric;
 };
 
+interface PrefetchItem {
+  url: string;
+  type: 'fbx' | 'texture';
+  modelName: string;
+  name: string;
+}
+
+async function fetchWithProgress(url: string, onProgress: (loaded: number, total: number) => void): Promise<Blob> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  
+  const contentLength = response.headers.get('content-length');
+  const total = contentLength ? parseInt(contentLength, 10) : 0;
+  
+  if (!response.body || total === 0) {
+    const blob = await response.blob();
+    onProgress(blob.size, blob.size);
+    return blob;
+  }
+  
+  const reader = response.body.getReader();
+  let loaded = 0;
+  const chunks: Uint8Array[] = [];
+  
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      chunks.push(value);
+      loaded += value.length;
+      onProgress(loaded, total);
+    }
+  }
+  
+  return new Blob(chunks);
+}
+
+
 const App: React.FC = () => {
   const [models, setModels] = useState<SceneModelInstance[]>([]);
   const [catalogFiles, setCatalogFiles] = useState<any[]>([]);
@@ -86,9 +216,13 @@ const App: React.FC = () => {
   const [isMoveMode, setIsMoveMode] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isCatalogCollapsed, setIsCatalogCollapsed] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [catalogSearchQuery, setCatalogSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNightMode, setIsNightMode] = useState(false);
   const [isProductInfoOpen, setIsProductInfoOpen] = useState(false);
+  const [orbitDirection, setOrbitDirection] = useState<'up' | 'down' | 'left' | 'right' | null>(null);
   const [isFetchingDetails, setIsFetchingDetails] = useState(false);
   const [language, setLanguage] = useState<Language>('en');
   const [productDetails, setProductDetails] = useState<{ 
@@ -97,7 +231,12 @@ const App: React.FC = () => {
     description: string, 
     originalTitle: string, 
     originalDescription: string,
-    linkTo?: string
+    linkTo?: string,
+    category?: string,
+    subCategory?: string,
+    originalCategory?: string,
+    originalSubCategory?: string,
+    price?: number
   } | null>(null);
   const [productTitles, setProductTitles] = useState<Record<string, string>>({});
   const [translatedSelectedModelName, setTranslatedSelectedModelName] = useState<string>('');
@@ -107,6 +246,282 @@ const App: React.FC = () => {
   const [uvLayoutFilename, setUvLayoutFilename] = useState<string>('');
   const [partUVMaps, setPartUVMaps] = useState<Record<string, { svg: string; filename: string }>>({});
   const [inspectedUVPart, setInspectedUVPart] = useState<{ name: string; svg: string; filename: string } | null>(null);
+  
+  // Unified 3D model & texture preloading progress tracking states
+  const [fbxProgress, setFbxProgress] = useState(0);
+  const [texturesLoaded, setTexturesLoaded] = useState(0);
+  const [texturesTotal, setTexturesTotal] = useState(-1);
+  const [isFbxDone, setIsFbxDone] = useState(false);
+  const [smoothProgress, setSmoothProgress] = useState(0);
+
+  // Background prefetching / caching states
+  const [cachedUrls, setCachedUrls] = useState<Record<string, boolean>>({});
+  const [activeModelBlobUrls, setActiveModelBlobUrls] = useState<Record<string, string>>({});
+  const [prefetchQueue, setPrefetchQueue] = useState<PrefetchItem[]>([]);
+  const [currentPrefetchIndex, setCurrentPrefetchIndex] = useState(-1);
+  const [isPrefetchPaused, setIsPrefetchPaused] = useState(false);
+  const [currentPrefetchProgress, setCurrentPrefetchProgress] = useState(0);
+  const [prefetchSummary, setPrefetchSummary] = useState({ loaded: 0, total: 0 });
+  const isPrefetchingActive = useRef(false);
+
+  // Derive model fully loaded state checks mapped above our hooks to safely prevent closures locking onto stale body evaluations
+  const isTargetFullyLoaded = isFbxDone && texturesTotal >= 0 && (texturesTotal === 0 || texturesLoaded >= texturesTotal);
+  const isModelFullyLoaded = isTargetFullyLoaded && smoothProgress >= 99.9;
+
+  // 1. Initial Cache storage loader - queries keys without instantiating massive Object URLs in RAM
+  useEffect(() => {
+    const loadExistingCache = async () => {
+      try {
+        const cache = await caches.open('model-assets-cache');
+        const keys = await cache.keys();
+        const mappings: Record<string, boolean> = {};
+        
+        console.log(`[CacheLoader] Found ${keys.length} raw cache records. Storing lightweight offline index...`);
+        
+        for (const req of keys) {
+          mappings[req.url] = true;
+        }
+        
+        setCachedUrls(mappings);
+      } catch (err) {
+        console.warn('[CacheLoader] Error loading initial Cache Storage keys:', err);
+      }
+    };
+    
+    loadExistingCache();
+  }, []);
+
+  // 2. Queue builder when catalog files and textures are ready
+  useEffect(() => {
+    if (catalogFiles.length === 0) return;
+    
+    const queue: PrefetchItem[] = [];
+    
+    catalogFiles.forEach(file => {
+      const originalDisplayName = file.name.replace(/\.fbx$/i, '');
+      
+      // FBX Model itself
+      queue.push({
+        url: file.url,
+        type: 'fbx',
+        modelName: originalDisplayName,
+        name: file.name
+      });
+      
+      // Related Textures
+      const matchingTextures = catalogTextures.filter(tex => isModelTextureMatch(tex.name, originalDisplayName));
+      matchingTextures.forEach(tex => {
+        queue.push({
+          url: tex.url,
+          type: 'texture',
+          modelName: originalDisplayName,
+          name: tex.name
+        });
+      });
+    });
+    
+    setPrefetchQueue(queue);
+    setPrefetchSummary({ loaded: 0, total: queue.length });
+    setCurrentPrefetchIndex(0);
+  }, [catalogFiles, catalogTextures]);
+
+  // 3. Sequentially process next prefetch queue item - purely writing to cache storage, not generating Memory Blobs
+  useEffect(() => {
+    let active = true;
+    
+    const processNextQueueItem = async () => {
+      if (!active) return;
+      
+      // Freeze caching entirely if an active model is busy loading (maximizing IO and CPU for interactive render)
+      const isModelLoading = catalogFiles.length > 0 && !isModelFullyLoaded;
+      
+      if (isPrefetchPaused || isModelLoading || currentPrefetchIndex < 0 || currentPrefetchIndex >= prefetchQueue.length) {
+        isPrefetchingActive.current = false;
+        return;
+      }
+      
+      if (isPrefetchingActive.current) return;
+      isPrefetchingActive.current = true;
+      
+      const item = prefetchQueue[currentPrefetchIndex];
+      
+      // Skip download if we already verified caching
+      if (cachedUrls[item.url]) {
+        setPrefetchSummary(prev => ({ ...prev, loaded: Math.min(prev.loaded + 1, prev.total) }));
+        isPrefetchingActive.current = false;
+        setCurrentPrefetchIndex(prev => prev + 1);
+        return;
+      }
+      
+      // Skip download if it's in Cache Storage but just not in cachedUrls yet
+      try {
+        const cache = await caches.open('model-assets-cache');
+        const matched = await cache.match(item.url);
+        if (matched) {
+          setCachedUrls(prev => ({ ...prev, [item.url]: true }));
+          setPrefetchSummary(prev => ({ ...prev, loaded: Math.min(prev.loaded + 1, prev.total) }));
+          isPrefetchingActive.current = false;
+          setCurrentPrefetchIndex(prev => prev + 1);
+          return;
+        }
+      } catch (e) {
+        console.warn('[Prefetch] Match error:', e);
+      }
+      
+      // Perform progressive background fetch
+      try {
+        console.log(`[Prefetch] Background fetch: ${item.name} (${currentPrefetchIndex + 1}/${prefetchQueue.length})`);
+        setCurrentPrefetchProgress(0);
+        
+        const blob = await fetchWithProgress(item.url, (loaded, total) => {
+          if (!active) return;
+          const progress = total > 0 ? Math.round((loaded / total) * 100) : 0;
+          setCurrentPrefetchProgress(progress);
+        });
+        
+        if (!active) return;
+        
+        const cache = await caches.open('model-assets-cache');
+        const responseToCache = new Response(blob, {
+          headers: {
+            'Content-Type': item.type === 'fbx' ? 'application/octet-stream' : 'image/jpeg',
+            'Content-Length': blob.size.toString()
+          }
+        });
+        await cache.put(item.url, responseToCache);
+        
+        setCachedUrls(prev => ({ ...prev, [item.url]: true }));
+        setPrefetchSummary(prev => ({ ...prev, loaded: Math.min(prev.loaded + 1, prev.total) }));
+        
+        console.log(`[Prefetch] Completed and cached locally to offline disk storage: ${item.name}`);
+      } catch (err) {
+        console.warn(`[Prefetch] Failed caching item ${item.name}:`, err);
+      } finally {
+        if (active) {
+          isPrefetchingActive.current = false;
+          setCurrentPrefetchProgress(0);
+          setCurrentPrefetchIndex(prev => prev + 1);
+        }
+      }
+    };
+    
+    // Give browser a tiny 1-sec breath before sequentially starting background queue task
+    const timer = setTimeout(() => {
+      processNextQueueItem();
+    }, 1000);
+    
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [prefetchQueue, currentPrefetchIndex, isPrefetchPaused, isModelFullyLoaded, cachedUrls, catalogFiles.length]);
+
+  // 4. Resolve Cache to Object URLs for ONLY the active models in the scene (prevents OOM / crashes)
+  useEffect(() => {
+    let active = true;
+    const oldActiveBlobUrls = { ...activeModelBlobUrls };
+
+    const resolveActiveModels = async () => {
+      if (models.length === 0) {
+        if (active) setActiveModelBlobUrls({});
+        // Revoke all prior active object URLs
+        Object.values(oldActiveBlobUrls).forEach(url => {
+          try { URL.revokeObjectURL(url); } catch (e) { console.warn('Error revoking URL:', e); }
+        });
+        return;
+      }
+
+      const cache = await caches.open('model-assets-cache');
+      const newBlobUrls: Record<string, string> = {};
+
+      for (const model of models) {
+        // Resolve FBX model structure
+        try {
+          if (oldActiveBlobUrls[model.url]) {
+            newBlobUrls[model.url] = oldActiveBlobUrls[model.url];
+          } else {
+            const matched = await cache.match(model.url);
+            if (matched) {
+              const blob = await matched.blob();
+              newBlobUrls[model.url] = URL.createObjectURL(blob);
+              console.log(`[CacheResolver] Resolved active scene model FBX to memory: ${model.name}`);
+            }
+          }
+        } catch (e) {
+          console.warn('[CacheResolver] Match error or file not yet cached for FBX:', model.url, e);
+        }
+
+        // Resolve textures for this specific model
+        const originalDisplayName = model.name.replace(/\.fbx$/i, '');
+        const matchingTextures = catalogTextures.filter(tex => isModelTextureMatch(tex.name, originalDisplayName));
+
+        for (const tex of matchingTextures) {
+          try {
+            if (oldActiveBlobUrls[tex.url]) {
+              newBlobUrls[tex.url] = oldActiveBlobUrls[tex.url];
+            } else {
+              const matched = await cache.match(tex.url);
+              if (matched) {
+                const blob = await matched.blob();
+                newBlobUrls[tex.url] = URL.createObjectURL(blob);
+              }
+            }
+          } catch (e) {
+            console.warn('[CacheResolver] Match error or texture not yet cached:', tex.url, e);
+          }
+        }
+      }
+
+      if (!active) {
+        // Clean up any newly instantiated Object URLs if component was aborted
+        Object.keys(newBlobUrls).forEach(url => {
+          if (!oldActiveBlobUrls[url]) {
+            try { URL.revokeObjectURL(newBlobUrls[url]); } catch (e) { console.warn('Error revoking URL:', e); }
+          }
+        });
+        return;
+      }
+
+      // Identify and revoke obsoleted active blob URLs to completely free up memory immediately
+      Object.keys(oldActiveBlobUrls).forEach(url => {
+        if (!newBlobUrls[url]) {
+          try { URL.revokeObjectURL(oldActiveBlobUrls[url]); } catch (e) { console.warn('Error revoking URL:', e); }
+        }
+      });
+
+      setActiveModelBlobUrls(newBlobUrls);
+    };
+
+    resolveActiveModels();
+
+    return () => {
+      active = false;
+    };
+  }, [models, catalogTextures]);
+
+  useEffect(() => {
+    // Safely subscribe to global Drei loader progress outside the React render path 
+    const unsubscribe = useProgress.subscribe((state) => {
+      const p = state.progress;
+      setTimeout(() => {
+        setFbxProgress(Math.floor(p));
+      }, 0);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const selectedModel = models.find(m => m.id === selectedId);
+
+  useEffect(() => {
+    if (selectedModel?.url) {
+      setFbxProgress(0);
+      setTexturesLoaded(0);
+      setTexturesTotal(-1);
+      setIsFbxDone(false);
+      setSmoothProgress(0);
+    }
+  }, [selectedModel?.id, selectedModel?.url]);
+
   const t = translations[language];
 
   useEffect(() => {
@@ -126,8 +541,6 @@ const App: React.FC = () => {
     }
   }, [toast]);
 
-  const selectedModel = models.find(m => m.id === selectedId);
-
   const fetchingModels = useRef(new Set<string>());
 
   useEffect(() => {
@@ -140,7 +553,7 @@ const App: React.FC = () => {
         try {
           const folder = 'images';
           const modelName = model.name;
-          const clientName = 'tenantB';
+          const clientName = 'tenantA';
           const response = await fetch(`/api/files/get-images-by-model?folder=${encodeURIComponent(folder)}&modelName=${encodeURIComponent(modelName)}&clientName=${clientName}&v=3`);
           if (!response.ok) {
             fetchingModels.current.delete(model.id);
@@ -182,7 +595,7 @@ const App: React.FC = () => {
     const fetchCatalog = async () => {
       setIsLoadingCatalog(true);
       try {
-        const response = await fetch('/api/files/get-files?folder=tenants&clientName=tenantB&v=3');
+        const response = await fetch('/api/files/get-files?folder=tenants&clientName=tenantA&v=3');
         if (response.ok) {
           const rawData = await response.json();
           const getListData = (raw: any) => {
@@ -198,7 +611,10 @@ const App: React.FC = () => {
               if (typeof item === 'string') return { key: item, name: item, url: item };
               const name = item.fileName || item.FileName || item.filename || item.Name || item.name || "";
               const key = item.fullPath || item.FullPath || item.fullpath || item.Key || item.item_key || item.key || name || "";
-              const url = `/api/files/get-file?folder=tenants&clientName=tenantB&fileName=${encodeURIComponent(name)}&v=3`;
+              const itemUrl = item.url || item.Url || "";
+              const url = (itemUrl && itemUrl.includes("pub-")) 
+                ? itemUrl 
+                : `https://pub-721b92b9c051433d993f7185396e4c79.r2.dev/tenants/tenantA/${encodeURIComponent(name)}`;
               return { key, name, url };
             })
             .filter((f: any) => f.name.toLowerCase().endsWith(".fbx") || f.key.toLowerCase().endsWith(".fbx"));
@@ -216,7 +632,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const fetchTextures = async () => {
       try {
-        const response = await fetch('/api/files/get-files?folder=images&clientName=tenantB&v=3');
+        const response = await fetch('/api/files/get-files?folder=images&clientName=tenantA&v=3');
         if (response.ok) {
           const raw = await response.json();
           const getListData = (r: any) => {
@@ -231,7 +647,11 @@ const App: React.FC = () => {
           const extracted = list.map((item: any) => {
             const name = item.fileName || item.FileName || item.filename || item.Name || item.name || item.Title || item.title || "";
             const key = item.fullPath || item.FullPath || item.fullpath || item.Key || item.item_key || item.key || item.FilePath || name || "";
-            const url = `/api/files/get-file?folder=images&clientName=tenantB&fileName=${encodeURIComponent(name)}&v=3`;
+            // Textures/images are loaded directly from R2 public bucket path
+            const itemUrl = item.url || item.Url || "";
+            const url = (itemUrl && itemUrl.includes("pub-"))
+              ? itemUrl
+              : `https://pub-721b92b9c051433d993f7185396e4c79.r2.dev/images/${encodeURIComponent(name)}`;
             return { key, name, url };
           }).filter((f: any) => {
             const lowName = f.name.toLowerCase();
@@ -280,8 +700,8 @@ const App: React.FC = () => {
                 if (data && active) {
                   const result = Array.isArray(data) ? data[0] : data;
                   if (result) {
-                    const apiTitle = result.productTitle || result.title || result.name || selectedModel.name;
-                    const desc = result.productDescription || result.description || '';
+                    const apiTitle = cleanEscapedQuotes(result.productDisplayTitle || result.productTitle || result.title || result.name || selectedModel.name);
+                    const desc = cleanEscapedQuotes(result.productDescription || result.description || '');
                     const pId = result.productId || result.ProductId || result.id || '';
                     
                     if (pId && loggedViewProductIdRef.current !== pId) {
@@ -296,13 +716,19 @@ const App: React.FC = () => {
                     setProductTitles(prev => ({ ...prev, [normalizedName]: apiTitle }));
                     
                     if (active) {
+                      const pPrice = result.productPrice !== undefined ? Number(result.productPrice) : (result.price !== undefined ? Number(result.price) : undefined);
                       setProductDetails({
                         productId: pId,
                         title: apiTitle,
                         description: desc,
                         originalTitle: apiTitle,
                         originalDescription: desc,
-                        linkTo: result.linkTo
+                        linkTo: result.linkTo,
+                        category: result.productCategory || result.category || '',
+                        subCategory: result.productSubCategory || result.subCategory || result.subcategory || '',
+                        originalCategory: result.productCategory || result.category || '',
+                        originalSubCategory: result.productSubCategory || result.subCategory || result.subcategory || '',
+                        price: pPrice
                       });
                       
                       // Auto-open on large screens only
@@ -346,19 +772,35 @@ const App: React.FC = () => {
   useEffect(() => {
     const langName = language === 'he' ? 'Hebrew' : language === 'ar' ? 'Arabic' : language === 'ru' ? 'Russian' : 'English';
     
-    if (productDetails && langName !== 'English') {
+    if (productDetails) {
       const translateInfo = async () => {
-        const [tTitle, tDesc] = await Promise.all([
+        const promises = [
           translateText(productDetails.originalTitle, langName),
           translateText(productDetails.originalDescription, langName)
-        ]);
-        setProductDetails(prev => prev ? { ...prev, title: tTitle, description: tDesc, linkTo: prev.linkTo } : null);
+        ];
+        if (productDetails.originalCategory) {
+          promises.push(translateText(productDetails.originalCategory, langName));
+        } else {
+          promises.push(Promise.resolve(''));
+        }
+        if (productDetails.originalSubCategory) {
+          promises.push(translateText(productDetails.originalSubCategory, langName));
+        } else {
+          promises.push(Promise.resolve(''));
+        }
+
+        const [tTitle, tDesc, tCat, tSub] = await Promise.all(promises);
+        setProductDetails(prev => prev ? { 
+          ...prev, 
+          title: tTitle, 
+          description: tDesc, 
+          category: tCat || prev.originalCategory,
+          subCategory: tSub || prev.originalSubCategory
+        } : null);
       };
       translateInfo();
-    } else if (productDetails && langName === 'English') {
-      setProductDetails(prev => prev ? { ...prev, title: prev.originalTitle, description: prev.originalDescription, linkTo: prev.linkTo } : null);
     }
-  }, [language, productDetails?.originalDescription, productDetails?.originalTitle]);
+  }, [language, productDetails?.originalDescription, productDetails?.originalTitle, productDetails?.originalCategory, productDetails?.originalSubCategory]);
 
   // Translate selected model name
   useEffect(() => {
@@ -737,6 +1179,7 @@ const App: React.FC = () => {
     setSelectedId(id);
     setTargetView({ pos: defaultCamPos.clone(), lookAt: new THREE.Vector3(0, 0, 0) });
     setIsSidebarOpen(false);
+    setIsCatalogCollapsed(true);
   };
 
   const updateModelData = (id: string, updates: Partial<SceneModelInstance>) => {
@@ -770,7 +1213,7 @@ const App: React.FC = () => {
     console.log(`Starting auto-map for model ${modelId} with materials:`, materials);
     try {
       const [r2Res, localRes] = await Promise.all([
-        fetch('/api/files/get-files?folder=images&clientName=tenantB').then(async r => {
+        fetch('/api/files/get-files?folder=images&clientName=tenantA').then(async r => {
           if (!r.ok) return { textures: [] };
           const data = await r.json();
           const items = Array.isArray(data) ? data : (data.files || data.items || data.data || []);
@@ -1216,8 +1659,36 @@ const App: React.FC = () => {
     setTargetView(null); 
     if (!controlsRef.current) return;
     const controls = controlsRef.current;
+    
     if (action === 'zoomIn') controls.object.position.multiplyScalar(0.8);
     if (action === 'zoomOut') controls.object.position.divideScalar(0.8);
+
+    if (action === 'left' || action === 'right' || action === 'up' || action === 'down') {
+      try {
+        const camera = controls.object;
+        const target = controls.target || new THREE.Vector3(0, 0, 0);
+        const offset = camera.position.clone().sub(target);
+        const speed = 0.15; // single click rotation speed in radians
+
+        if (action === 'left') {
+          offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), speed);
+        } else if (action === 'right') {
+          offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), -speed);
+        } else if (action === 'up') {
+          const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+          offset.applyAxisAngle(right, speed);
+        } else if (action === 'down') {
+          const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+          offset.applyAxisAngle(right, -speed);
+        }
+
+        camera.position.copy(target).add(offset);
+        camera.lookAt(target);
+      } catch (err) {
+        console.warn("[handleCameraAction] Failed manual orbit step:", err);
+      }
+    }
+
     controls.update();
   };
 
@@ -1389,21 +1860,51 @@ const App: React.FC = () => {
     return baseColorVariants.length > 1 ? baseColorVariants : [];
   }, [selectedModel, activeMaterialName]);
 
+  // Compute unified percentage progress
+  let unifiedProgress = 0;
+  if (!isFbxDone) {
+    // FBX stage handles 0% to 30%
+    unifiedProgress = Math.round(fbxProgress * 0.3);
+  } else {
+    // Textures stage handles 30% to 100%
+    if (texturesTotal <= 0) {
+      unifiedProgress = texturesTotal === 0 ? 100 : 30;
+    } else {
+      unifiedProgress = Math.round(30 + (texturesLoaded / texturesTotal) * 70);
+    }
+  }
+  // Clamp progress
+  unifiedProgress = Math.min(100, Math.max(0, unifiedProgress));
+
+  // Frame-by-frame interpolation of smoothProgress towards unifiedProgress for maximum fluid response
+  useEffect(() => {
+    let rAF: number;
+    const update = () => {
+      setSmoothProgress((prev) => {
+        if (prev < unifiedProgress) {
+          const diff = unifiedProgress - prev;
+          // Calculate step with easing, ensuring a minimal speed to avoid getting stuck
+          const step = Math.max(0.18, diff * 0.04);
+          const next = prev + step;
+          return next >= unifiedProgress ? unifiedProgress : next;
+        } else if (prev > unifiedProgress) {
+          return unifiedProgress;
+        }
+        return prev;
+      });
+      rAF = requestAnimationFrame(update);
+    };
+    rAF = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(rAF);
+  }, [unifiedProgress]);
+
+  const showModelLoadingScreen = !!selectedModel && !isModelFullyLoaded;
+
   return (
     <div className={`relative w-screen h-screen overflow-hidden bg-transparent text-zinc-900 font-sans transition-colors duration-500 ${isRTL ? 'rtl' : 'ltr'}`} dir={isRTL ? 'rtl' : 'ltr'}>
       {/* BACKGROUND LAYER */}
       <div className={`fixed inset-0 z-[-2] transition-colors duration-1000 ${isNightMode ? 'bg-zinc-900' : 'bg-white'}`} />
 
-      {/* FULL SCREEN WATERMARK BACKGROUND */}
-      <div 
-        className={`fixed inset-0 pointer-events-none z-[-1] flex items-center justify-center transition-all duration-1000 ${isNightMode ? 'opacity-[0.6] brightness-[300%]' : 'opacity-[0.08]'}`}
-        style={{
-          backgroundImage: 'url(/api/files/get-file?folder=images&fileName=wallpaper_customer_maxis.png)',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-          backgroundSize: '70%',
-        }}
-      />
 
       {/* TOP LEFT LOGO/SQUARE */}
       <div className="fixed top-4 left-4 z-[60] flex flex-row gap-3 items-center pointer-events-none" dir="ltr">
@@ -1414,7 +1915,7 @@ const App: React.FC = () => {
           className="w-12 h-12 sm:w-16 sm:h-16 bg-white/80 backdrop-blur-xl rounded-xl sm:rounded-2xl border border-black/5 shadow-2xl overflow-hidden flex items-center justify-center pointer-events-auto transition-transform hover:scale-105 active:scale-95"
         >
           <img 
-            src="/api/files/get-file?folder=images&fileName=wallpaper_customer_maxis_only_logo.png" 
+            src="https://pub-721b92b9c051433d993f7185396e4c79.r2.dev/images/wallpaper_customer_maxis_only_logo.png" 
             alt="Customer Logo" 
             className="w-full h-full object-contain p-2"
             referrerPolicy="no-referrer"
@@ -1430,7 +1931,53 @@ const App: React.FC = () => {
       </div>
 
       {/* TOP CONTROLS */}
-      <div className="absolute top-4 sm:top-6 z-50 flex flex-row items-start gap-3 right-4 sm:right-6" dir="ltr">
+      <div className="absolute top-4 sm:top-6 z-[1001] flex flex-row items-center gap-3 right-4 sm:right-6" dir="ltr">
+        {/* Search Control */}
+        <div className="relative flex items-center">
+          <div className={`relative flex items-center transition-all duration-300 ${isSearchOpen ? 'w-48 sm:w-64 opacity-100 mr-2' : 'w-0 opacity-0 pointer-events-none overflow-hidden'}`}>
+            <input
+              type="text"
+              value={catalogSearchQuery}
+              onChange={(e) => {
+                const val = e.target.value;
+                setCatalogSearchQuery(val);
+                if (val && isCatalogCollapsed) {
+                  setIsCatalogCollapsed(false);
+                }
+              }}
+              placeholder={language === 'he' ? 'חפש מוצר...' : 'Search product...'}
+              dir={isRTL ? 'rtl' : 'ltr'}
+              className="w-full h-10 sm:h-12 pl-4 pr-10 rounded-xl sm:rounded-2xl shadow-xl border border-black/5 bg-white text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-yellow-500/50 text-xs sm:text-sm font-medium"
+            />
+            {catalogSearchQuery && (
+              <button
+                onClick={() => setCatalogSearchQuery('')}
+                className="absolute right-3 text-zinc-400 hover:text-zinc-600 transition-colors p-1"
+                title={language === 'he' ? 'נקה' : 'Clear'}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => {
+              const nextState = !isSearchOpen;
+              setIsSearchOpen(nextState);
+              if (nextState && isCatalogCollapsed) {
+                setIsCatalogCollapsed(false);
+              }
+            }}
+            className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl shadow-xl border border-black/5 flex items-center justify-center transition-all group ${isSearchOpen ? 'bg-zinc-800 text-white' : 'bg-white text-zinc-400 hover:text-zinc-800'}`}
+            title={language === 'he' ? 'חיפוש' : 'Search'}
+          >
+            <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </button>
+        </div>
+
         {/* Settings Gear Button */}
         <div className="relative">
           <button 
@@ -1446,55 +1993,110 @@ const App: React.FC = () => {
 
           {/* Settings Dropdown Menu */}
           {isSettingsOpen && (
-            <div className="absolute top-full mt-2 flex flex-col gap-2 p-2 bg-white/90 backdrop-blur-xl rounded-2xl border border-black/5 shadow-2xl animate-in fade-in zoom-in-95 duration-200 right-0">
-              {/* Day/Night Mode */}
-              <button 
-                onClick={() => setIsNightMode(!isNightMode)}
-                className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl border border-black/5 flex items-center justify-center transition-all group ${isNightMode ? 'bg-zinc-800 text-yellow-400' : 'bg-white text-zinc-400 hover:text-yellow-500'}`}
-                title={isNightMode ? t.dayMode : t.nightMode}
-              >
-                {isNightMode ? (
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-11.314l.707.707m11.314 11.314l.707.707M12 5a7 7 0 100 14 7 7 0 000-14z" />
+            <div 
+              className={`absolute top-full mt-2 w-72 sm:w-80 flex flex-col gap-4 p-5 bg-white/95 backdrop-blur-2xl rounded-3xl border border-zinc-200/80 shadow-[0_20px_50px_rgba(0,0,0,0.15)] animate-in fade-in zoom-in-95 duration-200 right-0 z-[1000]`}
+              dir={isRTL ? 'rtl' : 'ltr'}
+            >
+              <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                  {t.settings}
+                </span>
+                {/* Close/Toggle Settings */}
+                <button 
+                  onClick={() => setIsSettingsOpen(false)}
+                  className="text-zinc-400 hover:text-zinc-600 p-0.5"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
                   </svg>
-                ) : (
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                  </svg>
-                )}
-              </button>
+                </button>
+              </div>
 
-              {/* Language Selector */}
-              <div className="flex flex-col gap-1 bg-zinc-50 p-1 rounded-xl border border-black/5">
-                {(['en', 'he', 'ar', 'ru'] as Language[]).map((lang) => (
-                  <button
-                    key={lang}
-                    onClick={() => setLanguage(lang)}
-                    className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center text-[10px] font-black uppercase transition-all ${language === lang ? 'bg-yellow-500 text-white shadow-lg' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800'}`}
-                  >
-                    {lang}
-                  </button>
-                ))}
+              {/* Day/Night Theme Switcher */}
+              <div className="flex items-center justify-between gap-3 bg-zinc-50/50 p-2 rounded-2xl border border-black/5">
+                <span className="text-xs font-bold text-zinc-600">
+                  {isNightMode ? t.dayMode : t.nightMode}
+                </span>
+                <button 
+                  onClick={() => setIsNightMode(!isNightMode)}
+                  className={`w-10 h-10 rounded-xl border border-black/5 flex items-center justify-center transition-all ${isNightMode ? 'bg-zinc-800 text-yellow-400' : 'bg-white text-zinc-400 hover:text-yellow-500 hover:shadow-sm'}`}
+                  title={isNightMode ? t.dayMode : t.nightMode}
+                >
+                  {isNightMode ? (
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-11.314l.707.707m11.314 11.314l.707.707M12 5a7 7 0 100 14 7 7 0 000-14z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+
+              {/* Language Code Selector */}
+              <div className="flex flex-col gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 leading-none">
+                  {language === 'he' ? 'שפת ממשק' : 'Interface Language'}
+                </span>
+                <div className="grid grid-cols-4 gap-1.5 bg-zinc-50/50 p-1 rounded-xl border border-black/5">
+                  {(['en', 'he', 'ar', 'ru'] as Language[]).map((lang) => (
+                    <button
+                      key={lang}
+                      onClick={() => setLanguage(lang)}
+                      className={`h-8 rounded-lg flex items-center justify-center text-[10px] font-black uppercase transition-all ${language === lang ? 'bg-yellow-500 text-white shadow-md' : 'text-zinc-400 hover:bg-zinc-100/80 hover:text-zinc-800'}`}
+                    >
+                      {lang}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
         </div>
-
-        {/* HAMBURGER MENU BUTTON */}
-        <button 
-          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          className="w-10 h-10 sm:w-12 sm:h-12 bg-white rounded-xl sm:rounded-2xl shadow-xl border border-black/5 flex items-center justify-center hover:bg-zinc-50 transition-all group"
-        >
-          <div className="relative w-5 h-4 flex flex-col justify-between">
-            <span className={`h-0.5 w-full bg-zinc-800 rounded-full transition-all duration-300 ${isSidebarOpen ? 'rotate-45 translate-y-[7px]' : ''}`} />
-            <span className={`h-0.5 w-full bg-zinc-800 rounded-full transition-all duration-300 ${isSidebarOpen ? 'opacity-0' : ''}`} />
-            <span className={`h-0.5 w-full bg-zinc-800 rounded-full transition-all duration-300 ${isSidebarOpen ? '-rotate-45 -translate-y-[7px]' : ''}`} />
-          </div>
-        </button>
       </div>
 
       {/* CENTER - VIEWPORT */}
-      <div className={`absolute inset-0 z-10 transition-colors duration-1000 ${isNightMode ? 'bg-zinc-800/50' : 'bg-transparent'}`}>
+      <div 
+        className={`absolute top-0 left-0 right-0 bottom-0 z-10 transition-colors duration-1000 ${isNightMode ? 'bg-zinc-800/50' : 'bg-transparent'}`}
+      >
+        
+        {showModelLoadingScreen && (
+          <div className="absolute inset-0 z-40 bg-stone-50/98 backdrop-blur-xl dark:bg-zinc-950/98 flex flex-col items-center justify-center animate-in fade-in duration-300">
+            {/* Elegant Circular Progress Loader with percentages and continuous rotation */}
+            <div className="relative w-28 h-28 flex items-center justify-center">
+              {/* Spinning/progress SVG circle - spinning continuously */}
+              <svg className="w-full h-full transform -rotate-90 animate-spin" style={{ animationDuration: '3s' }}>
+                {/* Background circle */}
+                <circle
+                  cx="56"
+                  cy="56"
+                  r="48"
+                  className="stroke-zinc-200 dark:stroke-zinc-800"
+                  strokeWidth="5"
+                  fill="none"
+                />
+                {/* Progress circle */}
+                <circle
+                  cx="56"
+                  cy="56"
+                  r="48"
+                  className="stroke-yellow-500 transition-all duration-300 ease-out"
+                  strokeWidth="5"
+                  strokeDasharray={2 * Math.PI * 48}
+                  strokeDashoffset={2 * Math.PI * 48 * (1 - smoothProgress / 100)}
+                  strokeLinecap="round"
+                  fill="none"
+                />
+              </svg>
+              {/* Percentage number centrally positioned inside */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
+                <span className="text-2xl font-black text-zinc-950 dark:text-white font-mono tracking-tight">{Math.round(smoothProgress)}%</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         <Canvas 
           shadows 
           dpr={[1, 2]} 
@@ -1509,10 +2111,11 @@ const App: React.FC = () => {
           }}
           className="relative z-20"
           style={{ background: 'transparent' }}
-          onPointerDown={() => { if (isMoveMode) setIsMoveMode(false); setTargetView(null); setActivePart(null); stopSpeaking(); }}
+          onPointerDown={() => { if (isMoveMode) setIsMoveMode(false); setTargetView(null); }}
         >
           <PerspectiveCamera makeDefault position={isMobile ? [0, 40, 180] : [0, 30, 120]} fov={35} near={0.1} far={2000} />
-          <CameraHandler targetView={targetView} controlsRef={controlsRef} activePartMesh={activePart?.mesh} />
+          <CameraHandler targetView={targetView} controlsRef={controlsRef} activePartMesh={activePart?.mesh} orbitDirection={orbitDirection} />
+
           <Suspense fallback={<Html center><div className="text-yellow-500 font-black uppercase tracking-[0.5em] animate-pulse text-[10px]">{t.initializing}</div></Html>}>
             {isUploading && (
               <Html center>
@@ -1533,25 +2136,27 @@ const App: React.FC = () => {
               <Environment preset={envPreset as any} />
             )}
             {models.map((model) => (
-              <group key={model.id} position={model.position} onPointerDown={(e) => { e.stopPropagation(); if (selectedId !== model.id) setSelectedId(model.id); }}>
+              <group key={model.id} position={model.position} visible={true} onPointerDown={(e) => { e.stopPropagation(); if (selectedId !== model.id) setSelectedId(model.id); }}>
                 <ModelErrorBoundary
                   modelName={model.name}
                   language={language}
                   onRetry={() => {
                     console.log(`[ErrorBoundary Option] Retrying model load for: ${model.name}`);
-                    const freshUrl = model.url.includes('&v=')
-                      ? model.url.replace(/&v=\d+/, `&v=${Date.now()}`)
-                      : `${model.url}&v=${Date.now()}`;
+                    const hasQuery = model.url.includes('?');
+                    const freshUrl = model.url.includes('v=')
+                      ? model.url.replace(/([?&])v=\d+/, `$1v=${Date.now()}`)
+                      : `${model.url}${hasQuery ? '&' : '?'}v=${Date.now()}`;
                     updateModelData(model.id, { url: freshUrl });
                   }}
                 >
                   <FBXModel 
-                    url={model.url} 
+                    url={activeModelBlobUrls[model.url] || model.url} 
                     settings={model.settings} 
                     textureSets={model.textureSets}
                     modelParts={modelParts}
                     activePartId={activePart?.id}
                     onPartClick={handlePartClick}
+                    onFbxLoaded={() => setIsFbxDone(true)}
                     onMaterialsLoaded={(mats) => {
                       updateModelData(model.id, { detectedMaterials: mats });
                       if (model.detectedMaterials.length === 0) {
@@ -1570,6 +2175,10 @@ const App: React.FC = () => {
                     translatedParts={translatedParts}
                     isMobile={isMobile}
                     hoveredPartId={hoveredPartId}
+                    onTexturesProgress={(loaded, total) => {
+                      setTexturesLoaded(loaded);
+                      setTexturesTotal(total);
+                    }}
                     onUVLayoutGenerated={(svg, filename) => {
                       setUvLayoutSvg(svg);
                       setUvLayoutFilename(filename);
@@ -1580,6 +2189,7 @@ const App: React.FC = () => {
                         [meshName]: { svg, filename }
                       }));
                     }}
+                    cachedBlobUrls={activeModelBlobUrls}
                   />
                 </ModelErrorBoundary>
               </group>
@@ -1598,90 +2208,73 @@ const App: React.FC = () => {
         </Canvas>
 
         {/* COLOR VARIANTS - BOTTOM CENTER */}
-        {selectedModel && (relevantVariants.length > 1 || activePart) && (
-          <div className="absolute bottom-24 sm:bottom-14 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 sm:gap-4 bg-white/80 backdrop-blur-2xl px-4 sm:px-8 py-3 sm:py-5 rounded-[2rem] sm:rounded-[3rem] border border-black/5 shadow-2xl animate-in slide-in-from-bottom-10 duration-1000 max-w-[90vw] overflow-x-auto no-scrollbar">
-            {relevantVariants.length > 1 ? (
-              <>
-                <div className="flex flex-col mr-2 sm:mr-4 shrink-0">
-                  <span className="text-[7px] sm:text-[8px] font-black uppercase tracking-[0.3em] text-zinc-400 leading-none mb-1">
-                    {activePart ? activePart.name : t.variant}
-                  </span>
-                  <span className="text-[10px] sm:text-[12px] font-black text-zinc-800 uppercase tracking-tight truncate max-w-[60px] sm:max-w-none">
-                    {selectedModel.settings.activeVariant || t.default}
-                  </span>
-                </div>
-                <div className="h-6 sm:h-8 w-[1px] bg-black/5 mr-1 sm:mr-2 shrink-0"></div>
-                <div className="flex items-center gap-2 sm:gap-3">
-                  {relevantVariants.map((variant) => (
-                    <button
-                      key={variant.name}
-                      onClick={() => handleSwitchVariant(variant.name)}
-                      className={`group relative w-8 h-8 sm:w-10 sm:h-10 rounded-full transition-all duration-500 shrink-0 ${
-                        selectedModel.settings.activeVariant === variant.name 
-                        ? 'scale-110 sm:scale-125 shadow-xl ring-4 ring-yellow-500/20' 
-                        : 'hover:scale-110'
-                      }`}
-                      title={variant.name}
-                    >
-                      <div 
-                        className="absolute inset-0 rounded-full border-2 border-white shadow-inner overflow-hidden"
-                        style={{ backgroundColor: getColorFromName(variant.name) }}
-                      >
-                        {activeMaterialName && variant.mappings[activeMaterialName] && (
-                          <img 
-                            src={variant.mappings[activeMaterialName]} 
-                            className="w-full h-full object-cover" 
-                            referrerPolicy="no-referrer"
-                            alt={variant.name}
-                          />
-                        )}
-                      </div>
-                      {selectedModel.settings.activeVariant === variant.name && (
-                        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="flex items-center gap-4">
-                {activePart && (
-                   <div className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
-                     {activePart.name}
-                   </div>
-                )}
-              </div>
-            )}
+        {selectedModel && relevantVariants.length > 1 && (
+          <div 
+            className="absolute left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 sm:gap-4 bg-white/80 backdrop-blur-2xl px-4 sm:px-8 py-3 sm:py-5 rounded-[2rem] sm:rounded-[3rem] border border-black/5 shadow-2xl animate-in slide-in-from-bottom-10 duration-1000 max-w-[90vw] overflow-x-auto no-scrollbar transition-all duration-500 ease-in-out"
+            style={{ bottom: isCatalogCollapsed ? '24px' : '254px' }}
+          >
+            <div className="flex flex-col mr-2 sm:mr-4 shrink-0">
+              <span className="text-[7px] sm:text-[8px] font-black uppercase tracking-[0.3em] text-zinc-400 leading-none mb-1">
+                {activePart ? activePart.name : t.variant}
+              </span>
+              <span className="text-[10px] sm:text-[12px] font-black text-zinc-800 uppercase tracking-tight truncate max-w-[60px] sm:max-w-none">
+                {selectedModel.settings.activeVariant || t.default}
+              </span>
+            </div>
+            <div className="h-6 sm:h-8 w-[1px] bg-black/5 mr-1 sm:mr-2 shrink-0"></div>
+            <div className="flex items-center gap-2 sm:gap-3">
+              {relevantVariants.map((variant) => (
+                <button
+                  key={variant.name}
+                  onClick={() => handleSwitchVariant(variant.name)}
+                  className={`group relative w-8 h-8 sm:w-10 sm:h-10 rounded-full transition-all duration-500 shrink-0 ${
+                    selectedModel.settings.activeVariant === variant.name 
+                    ? 'scale-110 sm:scale-125 shadow-xl ring-4 ring-yellow-500/20' 
+                    : 'hover:scale-110'
+                  }`}
+                  title={variant.name}
+                >
+                  <div 
+                    className="absolute inset-0 rounded-full border-2 border-white shadow-inner overflow-hidden"
+                    style={{ backgroundColor: getColorFromName(variant.name) }}
+                  >
+                    {activeMaterialName && variant.mappings[activeMaterialName] && (
+                      <img 
+                        src={variant.mappings[activeMaterialName]} 
+                        className="w-full h-full object-cover" 
+                        referrerPolicy="no-referrer"
+                        alt={variant.name}
+                      />
+                    )}
+                  </div>
+                  {selectedModel.settings.activeVariant === variant.name && (
+                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
 
         {/* PRODUCT INFO TAB - LEFT SIDE */}
         {selectedModel && (
-          <div className="absolute left-0 top-[50%] sm:top-[55%] -translate-y-1/2 z-[110] flex items-center pointer-events-none">
+          <div className="fixed left-0 top-0 bottom-0 z-[110] pointer-events-none w-full">
             <button
-              onClick={() => setIsProductInfoOpen(!isProductInfoOpen)}
-              className={`group relative flex items-center justify-center w-8 h-20 sm:w-12 sm:h-28 bg-white/95 backdrop-blur-xl border border-black/10 shadow-2xl transition-all duration-500 pointer-events-auto opacity-100 visible ${
-                isProductInfoOpen ? 'translate-x-[280px] sm:translate-x-[320px] lg:translate-x-[380px]' : 'translate-x-0'
+              onClick={() => setIsProductInfoOpen(true)}
+              className={`group absolute left-4 top-[76px] sm:top-[104px] flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-black/10 dark:border-white/10 shadow-2xl transition-all duration-300 pointer-events-auto rounded-xl sm:rounded-2xl ${
+                isProductInfoOpen ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100'
               }`}
               style={{
-                clipPath: 'polygon(0% 0%, 100% 50%, 0% 100%)',
-                borderRadius: '0 12px 12px 0',
-                zIndex: 111
+                zIndex: 112
               }}
+              title={language === 'he' ? 'מידע על המוצר' : 'Product Info'}
             >
-              <div className={`transition-transform duration-500 ${isProductInfoOpen ? 'rotate-180' : ''}`}>
-                <svg className="w-4 h-4 sm:w-5 sm:h-5 text-zinc-400 group-hover:text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M9 5l7 7-7 7" />
+              <div className="transition-transform duration-300">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-zinc-500 dark:text-zinc-400 group-hover:text-yellow-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              {!isProductInfoOpen && (
-                <div className="absolute left-1 flex flex-col items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="w-1 h-1 bg-yellow-500 rounded-full animate-pulse" />
-                  <div className="w-1 h-1 bg-yellow-500 rounded-full animate-pulse delay-75" />
-                  <div className="w-1 h-1 bg-yellow-500 rounded-full animate-pulse delay-150" />
-                </div>
-              )}
             </button>
 
             {/* PRODUCT INFO PANEL */}
@@ -1694,6 +2287,9 @@ const App: React.FC = () => {
                   : 'bg-white/98 border-r border-black/10'
               }`}
               dir={isRTL ? 'rtl' : 'ltr'}
+              style={{
+                zIndex: 111
+              }}
             >
               <div className="p-8 flex flex-col h-full">
                 <div className="flex items-center justify-between mb-8">
@@ -1733,6 +2329,42 @@ const App: React.FC = () => {
                 
                 <div className="flex-1 overflow-y-auto pr-4 no-scrollbar">
                   <div className="space-y-6">
+                    {/* Category & Subcategory Badges */}
+                    {(productDetails?.category || productDetails?.subCategory || productDetails?.price !== undefined) && (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {productDetails?.category && (
+                          <div className={`px-3 py-1.5 rounded-2xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 border shadow-sm ${
+                            isNightMode 
+                              ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' 
+                              : 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                          }`}>
+                            <span className="opacity-60">{language === 'he' ? 'קטגוריה:' : 'Category:'}</span>
+                            <span>{productDetails.category}</span>
+                          </div>
+                        )}
+                        {productDetails?.subCategory && (
+                          <div className={`px-3 py-1.5 rounded-2xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 border shadow-sm ${
+                            isNightMode 
+                              ? 'bg-zinc-800/80 text-zinc-300 border-zinc-700/80' 
+                              : 'bg-zinc-100 text-zinc-600 border-zinc-200'
+                          }`}>
+                            <span className="opacity-60">{language === 'he' ? 'קטגוריה משנית:' : 'Subcategory:'}</span>
+                            <span>{productDetails.subCategory}</span>
+                          </div>
+                        )}
+                        {productDetails?.price !== undefined && (
+                          <div className={`px-3 py-1.5 rounded-2xl text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 border shadow-sm ${
+                            isNightMode 
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          }`}>
+                            <span className="opacity-60">{t.price || (language === 'he' ? 'מחיר:' : 'Price:')}</span>
+                            <span>₪{productDetails.price.toLocaleString()}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Description Section */}
                     <div className={`p-6 rounded-3xl border ${
                       isNightMode ? 'bg-zinc-800/50 border-white/30' : 'bg-zinc-50/50 border-black/5'
@@ -1740,22 +2372,32 @@ const App: React.FC = () => {
                       <h3 className={`text-[9px] font-black ${isRTL ? '' : 'uppercase'} ${isRTL ? 'tracking-normal' : 'tracking-[0.15em]'} mb-4 ${isNightMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
                         {t.productDescription}
                       </h3>
-                      <p className={`text-sm leading-relaxed font-normal ${isNightMode ? 'text-zinc-300' : 'text-zinc-700'}`}>
-                        {isFetchingDetails ? t.loading : (productDetails?.description || t.noDescription)}
-                      </p>
+                      {isFetchingDetails ? (
+                        <p className={`text-sm leading-relaxed font-normal ${isNightMode ? 'text-zinc-300' : 'text-zinc-700'} whitespace-pre-wrap`}>
+                          {t.loading}
+                        </p>
+                      ) : (
+                        <div 
+                          className={`text-sm leading-relaxed font-normal ${isNightMode ? 'text-zinc-300' : 'text-zinc-700'} whitespace-pre-wrap`}
+                          dangerouslySetInnerHTML={{ __html: productDetails?.description || t.noDescription }}
+                        />
+                      )}
                     </div>
 
                     {/* Parts Section */}
-                    {(isFetchingParts || (modelParts && modelParts.length > 0)) && (
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className={`w-1 h-3 bg-yellow-500 rounded-full ${isRTL ? 'ml-0' : ''}`}></div>
-                          <h3 className={`text-[9px] font-black ${isRTL ? '' : 'uppercase'} ${isRTL ? 'tracking-normal' : 'tracking-[0.15em]'} ${isNightMode ? 'text-white' : 'text-zinc-800'}`}>
-                            {t.modelParts}
-                          </h3>
-                        </div>
-                        
-                        {isFetchingParts ? (
+                    {(() => {
+                      const visibleParts = modelParts ? modelParts.filter(part => part.presentAtSite !== false) : [];
+                      if (!isFetchingParts && visibleParts.length === 0) return null;
+                      return (
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className={`w-1 h-3 bg-yellow-500 rounded-full ${isRTL ? 'ml-0' : ''}`}></div>
+                              <h3 className={`text-[9px] font-black ${isRTL ? '' : 'uppercase'} ${isRTL ? 'tracking-normal' : 'tracking-[0.15em]'} ${isNightMode ? 'text-white' : 'text-zinc-800'}`}>
+                                {t.modelParts}
+                              </h3>
+                            </div>
+                            
+                            {isFetchingParts ? (
                           <div className="space-y-2">
                             {[1, 2, 3].map(i => (
                               <div key={i} className={`h-24 rounded-2xl animate-pulse flex flex-col p-4 gap-2 ${isNightMode ? 'bg-zinc-800/80' : 'bg-zinc-100'}`}>
@@ -1765,11 +2407,11 @@ const App: React.FC = () => {
                               </div>
                             ))}
                           </div>
-                        ) : (
-                          <div className="grid gap-2">
-                            {modelParts
-                              .filter(part => part.presentAtSite !== false)
-                              .map((part) => {
+                        ) : (() => {
+                          const visibleParts = modelParts ? modelParts.filter(part => part.presentAtSite !== false) : [];
+                          return (
+                            <div className="grid gap-2">
+                              {visibleParts.map((part) => {
                                 const tr = translatedParts[part.id];
                                 const name = tr?.name || part.partName;
                                 const description = tr?.description || part.description;
@@ -1932,9 +2574,10 @@ const App: React.FC = () => {
                                         <span className={`text-[10px] font-bold ${isRTL ? '' : 'uppercase'} opacity-60 ${isActive ? 'text-yellow-800' : isNightMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
                                           {t.labelPartDescription}:
                                         </span>
-                                        <p className={`text-[11px] leading-snug line-clamp-3 ${isActive ? 'text-zinc-800' : isNightMode ? 'text-zinc-300' : 'text-zinc-500'}`}>
-                                          {description}
-                                        </p>
+                                        <div 
+                                          className={`text-[11px] leading-snug line-clamp-3 whitespace-pre-wrap ${isActive ? 'text-zinc-800' : isNightMode ? 'text-zinc-300' : 'text-zinc-500'}`}
+                                          dangerouslySetInnerHTML={{ __html: description }}
+                                        />
                                       </div>
                                     </div>
                                     
@@ -1943,12 +2586,13 @@ const App: React.FC = () => {
                                     )}
                                   </button>
                                 );
-                              })
-                            }
-                          </div>
-                        )}
+                              })}
+                            </div>
+                          );
+                        })()}
                       </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -1958,7 +2602,11 @@ const App: React.FC = () => {
 
         {/* BOTTOM LEFT DESCRIPTION BOX */}
         {activePart && (
-          <div className={`absolute bottom-24 sm:bottom-6 left-6 z-50 w-[calc(100%-3rem)] sm:w-80 p-5 sm:p-6 bg-white/95 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_60px_rgba(0,0,0,0.2)] border border-white/40 animate-in slide-in-from-bottom-10 fade-in duration-500 max-h-[70vh] flex flex-col`} dir={isRTL ? 'rtl' : 'ltr'}>
+          <div 
+            className={`absolute left-6 z-50 w-[calc(100%-3rem)] sm:w-80 p-5 sm:p-6 bg-white/95 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_60px_rgba(0,0,0,0.2)] border border-white/40 animate-in slide-in-from-bottom-10 fade-in duration-500 max-h-[70vh] flex flex-col transition-all duration-500 ease-in-out`} 
+            style={{ bottom: isCatalogCollapsed ? '24px' : '254px' }}
+            dir={isRTL ? 'rtl' : 'ltr'}
+          >
             <div className="flex items-center justify-between mb-3 sm:mb-4 shrink-0">
               <div className="flex flex-col">
                 <span className="text-[8px] font-black uppercase tracking-[0.3em] text-blue-600 leading-none mb-1">{t.partDetails}</span>
@@ -1980,85 +2628,79 @@ const App: React.FC = () => {
             </div>
             <div className="h-[1px] w-full bg-zinc-100 mb-3 sm:mb-4 shrink-0"></div>
             <div className="overflow-y-auto pr-2 no-scrollbar flex-1">
-              <p className="text-xs sm:text-sm text-zinc-600 leading-relaxed font-medium">
-                {activePart.description || t.noDescription}
-              </p>
-              
-              {activePart.mesh?.name && partUVMaps[activePart.mesh.name] && (() => {
-                const uvData = partUVMaps[activePart.mesh.name];
-                const labels = {
-                  en: { inspect: "Inspect UV Map", download: "Download UV" },
-                  he: { inspect: "הצג מפת UV", download: "הורד מפת UV" },
-                  ar: { inspect: "معاينة UV", download: "تحميل UV" },
-                  ru: { inspect: "Посмотреть UV", download: "Скачать UV" }
-                }[language] || { inspect: "Inspect UV Map", download: "Download UV" };
+              <div 
+                className="text-xs sm:text-sm text-zinc-600 leading-relaxed font-medium whitespace-pre-wrap"
+                dangerouslySetInnerHTML={{ __html: activePart.description || t.noDescription }}
+              />
 
-                return (
-                  <div className="mt-4 pt-3 border-t border-zinc-100 flex flex-col gap-2 shrink-0">
-                    <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-zinc-400">UV WIREFRAME GRID</span>
-                    
-                    {/* Micro UV Inline Vector SVG Render Map */}
-                    <div 
-                      onClick={() => setInspectedUVPart({ name: activePart.name, svg: uvData.svg, filename: uvData.filename })}
-                      className="w-full h-24 bg-stone-950 border border-zinc-200/50 rounded-xl overflow-hidden relative cursor-pointer group hover:border-yellow-500 transition-all duration-300"
-                    >
-                      <div 
-                        className="w-full h-full p-2 opacity-80 group-hover:opacity-100 transition-opacity flex items-center justify-center [&_svg]:max-w-full [&_svg]:max-h-full [&_text]:hidden"
-                        dangerouslySetInnerHTML={{ __html: uvData.svg }}
-                      />
-                      <div className="absolute inset-0 bg-stone-900/40 backdrop-blur-[1px] opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-300">
-                        <span className="bg-white/95 text-stone-900 text-[10px] font-black tracking-wide uppercase px-3 py-1.5 rounded-full shadow-lg border border-black/5">
-                          {labels.inspect}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex">
-                      <button
-                        onClick={() => setInspectedUVPart({ name: activePart.name, svg: uvData.svg, filename: uvData.filename })}
-                        className="flex-1 py-1.5 px-3 bg-yellow-500 hover:bg-yellow-600 text-white font-black text-[10px] tracking-wide uppercase rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
-                        {labels.inspect}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()}
+              {activePart.mesh && (
+                <button
+                  onClick={() => {
+                    if (activePart.mesh) {
+                      const svg = generateSingleMeshUVSVG(activePart.mesh);
+                      if (svg) {
+                        const cleanMeshName = activePart.mesh.name.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+                        setInspectedUVPart({
+                          name: activePart.name,
+                          svg: svg,
+                          filename: `${selectedModel?.name || 'model'}_part_${cleanMeshName}_uv_layout.svg`
+                        });
+                      }
+                    }
+                  }}
+                  className="mt-4 flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-600 hover:from-blue-100 hover:to-indigo-100 font-extrabold text-[11px] sm:text-xs transition-all border border-blue-100/50 hover:border-blue-200/50 shadow-sm cursor-pointer"
+                >
+                  <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  {language === 'he' ? 'הצג קואורדינטות UV לחלק זה' : 'Inspect Mesh UV Map'}
+                </button>
+              )}
             </div>
           </div>
         )}
       </div>
 
-      {/* FLOATING ASSET LIBRARY */}
-      <div className={`fixed inset-0 sm:inset-auto sm:top-24 sm:bottom-0 sm:w-[340px] z-40 transition-all duration-500 transform ${
-        isSidebarOpen ? 'translate-x-0 opacity-100' : 'translate-x-full sm:translate-x-12 opacity-0 pointer-events-none'
-      } right-0 sm:right-6`}>
-        <div className={`w-full h-full bg-white/95 sm:bg-white/90 backdrop-blur-2xl sm:rounded-t-[2.5rem] border-b sm:border border-black/5 shadow-2xl overflow-hidden flex flex-col`}>
-          {/* Mobile Close Button */}
-          <div className="sm:hidden flex justify-end p-4 border-b border-black/5">
-            <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-zinc-400">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+      {/* STATIC BOTTOM CATALOG PANEL */}
+      <div 
+        className="fixed bottom-0 left-0 right-0 z-40 h-[230px] bg-white/90 dark:bg-zinc-950/90 backdrop-blur-2xl border-t border-black/15 dark:border-white/15 rounded-t-[2rem] shadow-[0_-12px_40px_rgba(0,0,0,0.12)] flex flex-col transition-transform duration-500 ease-in-out"
+        style={{
+          transform: `translateY(${isCatalogCollapsed ? '230px' : '0px'})`
+        }}
+      >
+        {/* Toggle Collapse/Expand Button */}
+        <button
+          onClick={() => setIsCatalogCollapsed(!isCatalogCollapsed)}
+          className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-[calc(100%-1px)] w-28 h-8 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-2xl border-t border-x border-black/15 dark:border-white/15 shadow-[0_-12px_24px_rgba(0,0,0,0.08)] flex items-center justify-center rounded-t-2xl z-50 group hover:text-yellow-600 dark:hover:text-yellow-500 transition-all duration-300 pointer-events-auto cursor-pointer"
+          title={language === 'he' ? (isCatalogCollapsed ? 'פתח קטלוג' : 'סגור קטלוג') : (isCatalogCollapsed ? 'Open Catalog' : 'Close Catalog')}
+        >
+          <div className="flex items-center justify-center w-full h-full pb-0.5">
+            <div className={`transition-transform duration-500 ease-in-out ${isCatalogCollapsed ? 'rotate-180' : ''}`}>
+              <svg className="w-5 h-5 text-zinc-400 group-hover:text-yellow-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7" />
               </svg>
-            </button>
+            </div>
           </div>
-          <Sidebar 
-            models={models} 
-            selectedId={selectedId} 
-            onSelect={setSelectedId} 
-            onAddFile={handleAddFile} 
-            onAddFromUrl={handleAddFromUrl}
-            onRemove={handleRemoveModel} 
-            language={language}
-            isMobile={isMobile}
-            catalogFiles={catalogFiles}
-            isLoadingCatalog={isLoadingCatalog}
-          />
-        </div>
+        </button>
+
+        <Sidebar 
+          models={models} 
+          selectedId={selectedId} 
+          onSelect={setSelectedId} 
+          onAddFile={handleAddFile} 
+          onAddFromUrl={handleAddFromUrl}
+          onRemove={handleRemoveModel} 
+          language={language}
+          isMobile={isMobile}
+          catalogFiles={catalogFiles}
+          isLoadingCatalog={isLoadingCatalog}
+          cachedUrls={cachedUrls}
+          prefetchSummary={prefetchSummary}
+          isPrefetchPaused={isPrefetchPaused}
+          currentPrefetchFile={prefetchQueue[currentPrefetchIndex]?.name || ''}
+          onTogglePrefetchPause={() => setIsPrefetchPaused(prev => !prev)}
+          searchQuery={catalogSearchQuery}
+        />
       </div>
 
       <CameraControls 
@@ -2067,7 +2709,14 @@ const App: React.FC = () => {
         onToggleAnimation={handleToggleAnimation}
         language={language}
         hasAnimations={selectedModel?.hasAnimations}
-        isSidebarOpen={isSidebarOpen}
+        isSidebarOpen={false}
+        onOrbitStart={(dir) => {
+          setTargetView(null);
+          setActivePart(null);
+          stopSpeaking();
+          setOrbitDirection(dir);
+        }}
+        onOrbitEnd={() => setOrbitDirection(null)}
       />
 
       {/* PART PREVIEW TOOLTIP */}
@@ -2109,7 +2758,7 @@ const App: React.FC = () => {
               </div>
               
               {hoveredPartTooltip.description && (
-                <p className={`text-xs text-zinc-500 leading-relaxed font-medium line-clamp-3 ${isRTL ? 'text-start text-xs font-normal' : ''}`}>
+                <p className={`text-xs text-zinc-500 leading-relaxed font-medium line-clamp-3 whitespace-pre-wrap ${isRTL ? 'text-start text-xs font-normal' : ''}`}>
                   {hoveredPartTooltip.description}
                 </p>
               )}
