@@ -5,10 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Maxis - Front</title>
-    <link rel="icon" type="image/png" href="https://pub-721b92b9c051433d993f7185396e4c79.r2.dev/images/wallpaper_customer_maxis_only_logo.png" />
+    <link rel="icon" type="image/png" href="https://files.fbxstudio.co.il/images/wallpaper_customer_maxis_only_logo.png" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     fontFamily: {
@@ -42,20 +43,34 @@
         
         ::-webkit-scrollbar {
             width: 6px;
+            height: 6px;
         }
         ::-webkit-scrollbar-track {
             background: transparent;
         }
         ::-webkit-scrollbar-thumb {
-            background: rgba(0, 0, 0, 0.1);
+            background: rgba(0, 0, 0, 0.15);
             border-radius: 20px;
-            border: 2px solid transparent;
+            border: 1px solid transparent;
             background-clip: content-box;
         }
         ::-webkit-scrollbar-thumb:hover {
-            background: rgba(0, 0, 0, 0.2);
+            background: rgba(0, 0, 0, 0.25);
             border-radius: 20px;
-            border: 2px solid transparent;
+            border: 1px solid transparent;
+            background-clip: content-box;
+        }
+
+        .dark ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 20px;
+            border: 1px solid transparent;
+            background-clip: content-box;
+        }
+        .dark ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4);
+            border-radius: 20px;
+            border: 1px solid transparent;
             background-clip: content-box;
         }
 
@@ -105,6 +120,32 @@
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
             background: rgba(0, 0, 0, 0.2);
+        }
+
+        /* Hide scrollbars completely while preserving scrollability */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none !important;  /* IE and Edge */
+            scrollbar-width: none !important;  /* Firefox */
+        }
+
+        /* Beautiful iPad slide-in entrance animation from right to left */
+        @keyframes slideInRightToLeft {
+            0% {
+                transform: translateX(80px);
+                opacity: 0;
+            }
+            100% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        .animate-slide-in-rtl {
+            animation: slideInRightToLeft 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
         }
     </style>
 <script type="importmap">

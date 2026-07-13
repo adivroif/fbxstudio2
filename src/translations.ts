@@ -31,6 +31,7 @@ export interface Translations {
   noDescription: string;
   viewDetails: string;
   modelParts: string;
+  pointsOfInterest?: string;
   noRelatedParts: string;
   labelPartKey: string;
   labelPartName: string;
@@ -79,6 +80,7 @@ export const translations: Record<Language, Translations> = {
     noDescription: "No description available",
     viewDetails: "View Details",
     modelParts: "Relateble",
+    pointsOfInterest: "Points of Interest",
     noRelatedParts: "No related parts for this product",
     labelPartKey: "Key",
     labelPartName: "Name",
@@ -125,6 +127,7 @@ export const translations: Record<Language, Translations> = {
     noDescription: "אין פירוט",
     viewDetails: "צפה בפרטים",
     modelParts: "חלקים קשורים",
+    pointsOfInterest: "נקודות עניין",
     noRelatedParts: "אין חלקים מקושרים למוצר זה",
     labelPartKey: "מפתח",
     labelPartName: "שם",
@@ -171,6 +174,7 @@ export const translations: Record<Language, Translations> = {
     noDescription: "لا يوجد وصف متاح",
     viewDetails: "عرض التفاصيل",
     modelParts: "أجزاء ذات صلة",
+    pointsOfInterest: "نقاط الاهتمام",
     noRelatedParts: "لا توجد أجزاء ذات صلة لهذا المنتج",
     labelPartKey: "مفتاح",
     labelPartName: "اسم",
@@ -217,6 +221,7 @@ export const translations: Record<Language, Translations> = {
     noDescription: "Описание отсутствует",
     viewDetails: "Посмотреть детали",
     modelParts: "Связанные части",
+    pointsOfInterest: "Точки интереса",
     noRelatedParts: "Нет связанных частей для этого продукта",
     labelPartKey: "Ключ",
     labelPartName: "Имя",

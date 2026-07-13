@@ -22,6 +22,7 @@ interface SidebarProps {
   currentPrefetchFile?: string;
   onTogglePrefetchPause?: () => void;
   searchQuery?: string;
+  isCatalogCollapsed?: boolean;
 }
 
 const cleanEscapedQuotes = (str: string): string => {
@@ -78,8 +79,20 @@ const Sidebar: React.FC<SidebarProps> = ({
   isPrefetchPaused = false,
   currentPrefetchFile = '',
   onTogglePrefetchPause = () => {},
-  searchQuery = ''
+  searchQuery = '',
+  isCatalogCollapsed = false
 }) => {
+  const isIPad = typeof window !== 'undefined' && (
+    /iPad/i.test(navigator.userAgent) || 
+    (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
+  );
+
+  const isTouchDevice = typeof window !== 'undefined' && (
+    window.matchMedia('(pointer: coarse)').matches || 
+    /iPad|iPhone|Android|Mobi/i.test(navigator.userAgent) ||
+    isIPad
+  );
+
   const [r2Files, setR2Files] = React.useState<any[]>([]);
   const [r2Textures, setR2Textures] = React.useState<any[]>([]);
   const [isLoadingR2, setIsLoadingR2] = React.useState(false);
@@ -89,6 +102,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [inventory, setInventory] = React.useState<Record<string, number>>({});
   const [descriptions, setDescriptions] = React.useState<Record<string, string>>({});
   const [apiTitles, setApiTitles] = React.useState<Record<string, string>>({});
+  const [productTitles, setProductTitles] = React.useState<Record<string, string>>({});
   const [apiCategories, setApiCategories] = React.useState<any[]>([]);
   const [displayStatus, setDisplayStatus] = React.useState<Record<string, boolean>>({});
   const [productToCategory, setProductToCategory] = React.useState<Record<string, string>>({});
@@ -272,6 +286,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             const result = Array.isArray(data) ? data[0] : data;
             if (result) {
               const apiTitle = cleanEscapedQuotes(result.productDisplayTitle || result.productTitle || result.title || result.name || '');
+              const productTitleVal = cleanEscapedQuotes(result.productTitle || result.title || result.name || '');
               const desc = cleanEscapedQuotes(result.productDescription || result.description || '');
               
               const pId = result.productId || result.id || result.ProductId;
@@ -292,6 +307,9 @@ const Sidebar: React.FC<SidebarProps> = ({
               
               if (apiTitle) {
                 setApiTitles(prev => ({ ...prev, [normalizedName]: apiTitle }));
+              }
+              if (productTitleVal) {
+                setProductTitles(prev => ({ ...prev, [normalizedName]: productTitleVal }));
               }
               if (desc) {
                 setDescriptions(prev => ({ ...prev, [normalizedName]: desc }));
@@ -339,7 +357,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const fetchCategories = async () => {
     try {
-      const res = await fetch('/api/categories/tenantA');
+      const res = await fetch('/api/categories/tenantB');
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -358,7 +376,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     try {
       console.log("Fetching textures catalog from Azure...");
       // We only need to fetch textures here, models come from props
-      const texturesRes = await fetch('/api/files/get-files?folder=images&clientName=tenantA&v=3');
+      const texturesRes = await fetch('/api/files/get-files?folder=images&clientName=tenantB&v=3');
       const rawTexturesData = texturesRes.ok ? await texturesRes.json() : [];
       
       const getListData = (raw: any) => {
@@ -379,7 +397,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         let url = item.url || item.Url || "";
         if (!url) {
           if (sourceFolder === "images" || sourceFolder.toLowerCase().includes("image")) {
-            url = `https://pub-721b92b9c051433d993f7185396e4c79.r2.dev/images/${encodeURIComponent(name)}`;
+            url = `https://files.fbxstudio.co.il/images/${encodeURIComponent(name)}`;
           } else {
             // Build the appropriate direct R2 public URL
             let r2Path = "";
@@ -387,16 +405,16 @@ const Sidebar: React.FC<SidebarProps> = ({
               if (sourceFolder.includes("/")) {
                 r2Path = `${sourceFolder}/${name}`;
               } else {
-                r2Path = `tenants/tenantA/${name}`;
+                r2Path = `tenants/tenantB/${name}`;
               }
             } else {
               r2Path = `${sourceFolder}/${name}`;
             }
-            url = `https://pub-721b92b9c051433d993f7185396e4c79.r2.dev/${r2Path.split("/").map(encodeURIComponent).join("/")}`;
+            url = `https://files.fbxstudio.co.il/${r2Path.split("/").map(encodeURIComponent).join("/")}`;
           }
         } else {
           // If the url exists but is not on the R2 public host, rewrite it to R2 public host
-          if (!url.includes("pub-")) {
+          if (!url.includes("files.fbxstudio.co.il")) {
             let r2Path = "";
             if (sourceFolder === "images" || sourceFolder.toLowerCase().includes("image")) {
               r2Path = `images/${name}`;
@@ -404,12 +422,12 @@ const Sidebar: React.FC<SidebarProps> = ({
               if (sourceFolder.includes("/")) {
                 r2Path = `${sourceFolder}/${name}`;
               } else {
-                r2Path = `tenants/tenantA/${name}`;
+                r2Path = `tenants/tenantB/${name}`;
               }
             } else {
               r2Path = `${sourceFolder}/${name}`;
             }
-            url = `https://pub-721b92b9c051433d993f7185396e4c79.r2.dev/${r2Path.split("/").map(encodeURIComponent).join("/")}`;
+            url = `https://files.fbxstudio.co.il/${r2Path.split("/").map(encodeURIComponent).join("/")}`;
           }
         }
         return { key, name, url };
@@ -690,7 +708,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     <div className="w-full h-full flex flex-col p-2.5 sm:p-3 overflow-hidden select-none bg-white dark:bg-zinc-950" dir={isRTL ? 'rtl' : 'ltr'}>
       {/* Top row: Title, Refresh Button, and Categories scroll */}
       <div className="flex flex-row items-center justify-between gap-3 px-1 sm:px-3 mb-2 h-9 shrink-0">
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="hidden sm:flex items-center gap-1.5 shrink-0">
           <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-pulse"></div>
           <h2 className={`text-[11px] sm:text-[12px] font-black ${isRTL ? '' : 'uppercase'} ${isRTL ? 'tracking-normal' : 'tracking-wider'} text-zinc-800 dark:text-zinc-200`}>
             {t.productsCatalog}
@@ -780,32 +798,42 @@ const Sidebar: React.FC<SidebarProps> = ({
         ) : r2Files.length === 0 ? (
           <div className="text-[10px] text-zinc-400 font-bold text-center py-4 italic">{t.noAssetsFound}</div>
         ) : (
-          <div className="w-full h-full flex flex-row gap-3 overflow-x-auto overflow-y-hidden custom-scroll items-center pb-1 px-1.5 scrollbar-thin select-none">
+          <div 
+            key={isCatalogCollapsed ? 'collapsed' : 'expanded'}
+            className="w-full h-full flex flex-row overflow-x-auto overflow-y-hidden items-center pb-1 gap-3 custom-scroll px-1.5 scrollbar-thin select-none"
+          >
             {filteredProducts.length === 0 ? (
               <div className="text-[10px] text-zinc-400 font-bold text-center py-4 italic w-full">
                 {t.noAssetsFound}
               </div>
             ) : (
-              filteredProducts.map((file) => {
+              filteredProducts.map((file, index) => {
                 const originalDisplayName = file.name.replace(/\.fbx$/i, '');
                 const cleanFileName = originalDisplayName.replace(/_/g, ' ').replace(/-/g, ' ');
                 const normalizedName = originalDisplayName.trim().toLowerCase();
                 const translation = translatedModels[normalizedName];
                 const displayName = translation?.name || apiTitles[normalizedName] || cleanFileName;
+                const searchName = productTitles[normalizedName] || originalDisplayName;
                 
                 const thumbnail = r2Textures.find(t => {
-                  return isModelTextureMatch(t.name, originalDisplayName) && t.name.toLowerCase().includes('preview');
-                }) || r2Textures.find(t => isModelTextureMatch(t.name, originalDisplayName));
+                  return isModelTextureMatch(t.name, searchName) && t.name.toLowerCase().includes('preview');
+                }) || r2Textures.find(t => isModelTextureMatch(t.name, searchName));
                 
                 const isOutOfStock = inventory[normalizedName] === 0;
                 const description = translation?.description || descriptions[normalizedName];
                 const isSelected = selectedId === file.id || selectedModel?.url === file.url;
 
+                // On iPad, animate item entrance from right to left with a staggered delay
+                const delayMs = index * 50;
+                const animClass = isIPad ? "animate-slide-in-rtl opacity-0" : "";
+                const animStyle = isIPad ? { animationDelay: `${delayMs}ms`, animationFillMode: 'forwards' } : {};
+
                 return (
                   <div 
                     key={file.key}
+                    style={animStyle}
                     onMouseEnter={(e) => {
-                      if (isMobile) return;
+                      if (isMobile || isTouchDevice) return;
                       const rect = e.currentTarget.getBoundingClientRect();
                       setHoveredProduct({
                         name: displayName,
@@ -825,12 +853,12 @@ const Sidebar: React.FC<SidebarProps> = ({
                       }
                       onAddFromUrl(file.url, file.name);
                     }}
-                    className={`flex flex-row gap-2.5 p-2 bg-zinc-50/70 dark:bg-zinc-900/60 border rounded-2xl transition-all group shadow-sm overflow-hidden relative items-center hover:scale-[1.02] active:scale-[0.98] w-[230px] sm:w-[250px] h-[86px] shrink-0 cursor-pointer ${
+                    className={`${animClass} flex flex-row gap-2.5 p-2 bg-zinc-50/70 dark:bg-zinc-900/60 border-[1px] rounded-2xl transition-all group shadow-sm overflow-hidden relative items-center hover:scale-[1.02] active:scale-[0.98] w-[230px] sm:w-[250px] h-[86px] shrink-0 cursor-pointer ${
                       isSelected 
-                        ? 'border-yellow-500 bg-yellow-50/20 dark:bg-yellow-500/10 font-bold' 
+                        ? 'border-yellow-500 dark:border-white bg-yellow-50/20 dark:bg-white/10 font-bold' 
                         : isOutOfStock 
-                          ? 'cursor-not-allowed opacity-70 border-black/5 bg-zinc-100/50' 
-                          : 'border-black/5 dark:border-white/5 hover:bg-yellow-50/40 dark:hover:bg-yellow-500/5 hover:border-yellow-200'
+                          ? 'cursor-not-allowed opacity-70 border-black/10 dark:border-white/20 bg-zinc-100/50' 
+                          : 'border-black/10 dark:border-white/20 hover:bg-yellow-50/40 dark:hover:bg-yellow-500/5 hover:border-yellow-200'
                     }`}
                   >
                     {isOutOfStock && (
@@ -844,7 +872,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     )}
 
                     <div className="shrink-0">
-                      <div className="w-[64px] h-[64px] bg-white dark:bg-zinc-800 rounded-xl relative overflow-hidden border border-black/5 dark:border-white/5">
+                      <div className="w-[64px] h-[64px] bg-white rounded-xl relative overflow-hidden border-[1px] border-black/10 dark:border-white/20">
                         {thumbnail ? (
                           <img 
                             src={thumbnail.url} 
@@ -863,8 +891,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                     </div>
 
                     <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1 w-full">
-                        <span className={`text-[11px] font-black uppercase tracking-wider transition-colors leading-tight truncate ${
+                      <div className="flex items-start justify-between gap-1 w-full">
+                        <span className={`text-[11px] font-black uppercase tracking-wider transition-colors leading-tight line-clamp-none break-words whitespace-normal flex-1 ${
                           isOutOfStock ? 'text-zinc-400 line-through decoration-red-500/50 decoration-2' : isSelected ? 'text-yellow-600 dark:text-yellow-500' : 'text-zinc-800 dark:text-zinc-200 group-hover:text-yellow-600 dark:group-hover:text-yellow-500'
                         }`}>
                           {displayName}
@@ -916,18 +944,19 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div 
           className="fixed z-[9999] pointer-events-none transition-all duration-300 animate-in fade-in zoom-in-95"
           style={{
-            top: Math.max(16, hoveredProduct.rect.top - 290),
+            top: Math.max(16, hoveredProduct.rect.top - 322),
             left: Math.max(16, Math.min(window.innerWidth - 320, hoveredProduct.rect.left + (hoveredProduct.rect.width - 300) / 2)),
             width: '300px',
+            height: '310px',
           }}
         >
-          <div className="bg-white/98 dark:bg-zinc-900/98 backdrop-blur-3xl rounded-[2rem] border border-black/10 dark:border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.2)] overflow-hidden flex flex-col p-4 gap-3">
-            <div className="aspect-[4/3] w-full bg-zinc-50 dark:bg-zinc-800 rounded-[1.5rem] overflow-hidden border border-black/5 dark:border-white/5">
+          <div className="bg-white/98 dark:bg-zinc-900/98 backdrop-blur-3xl rounded-[2rem] border border-black/10 dark:border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.2)] overflow-hidden flex flex-col p-4 justify-between h-full">
+            <div className="h-[120px] w-full bg-zinc-50 rounded-[1.5rem] overflow-hidden border border-black/5 dark:border-white/5 shrink-0 flex items-center justify-center">
               {hoveredProduct.image ? (
                 <img 
                   src={hoveredProduct.image} 
                   alt={hoveredProduct.name}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain p-2"
                   referrerPolicy="no-referrer"
                 />
               ) : (
@@ -939,8 +968,8 @@ const Sidebar: React.FC<SidebarProps> = ({
               )}
             </div>
             
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col justify-between flex-1 mt-2 min-h-0">
+              <div className="flex flex-col gap-0.5 shrink-0">
                 <div className={`flex items-center justify-between ${isRTL ? 'flex-row-reverse' : ''}`}>
                   <span className="text-[9px] font-black uppercase tracking-[0.2em] text-yellow-600 dark:text-yellow-500 leading-none">
                     {t.productInfo}
@@ -951,19 +980,23 @@ const Sidebar: React.FC<SidebarProps> = ({
                     </span>
                   )}
                 </div>
-                <h3 className={`text-lg font-black text-zinc-900 dark:text-zinc-100 leading-tight uppercase tracking-tight ${isRTL ? 'text-end' : ''}`}>
+                <h3 className={`text-base font-black text-zinc-900 dark:text-zinc-100 leading-tight uppercase tracking-tight line-clamp-1 ${isRTL ? 'text-end' : ''}`}>
                   {hoveredProduct.name}
                 </h3>
               </div>
               
-              {hoveredProduct.description && (
+              {hoveredProduct.description ? (
                 <div 
-                  className={`text-xs text-zinc-500 dark:text-zinc-400 font-medium leading-relaxed line-clamp-4 ${isRTL ? 'text-end' : ''}`}
+                  className={`text-xs text-zinc-500 dark:text-zinc-400 font-medium leading-relaxed overflow-y-auto no-scrollbar max-h-[90px] ${isRTL ? 'text-end' : ''}`}
                   dangerouslySetInnerHTML={{ __html: hoveredProduct.description }}
                 />
+              ) : (
+                <div className={`text-xs text-zinc-400 dark:text-zinc-500 italic font-medium leading-relaxed ${isRTL ? 'text-end' : ''}`}>
+                  {isRTL ? 'אין תיאור זמין' : 'No description available'}
+                </div>
               )}
 
-              <div className={`flex items-center justify-between pt-2 border-t border-black/5 dark:border-white/5 mt-1 ${isRTL ? 'flex-row-reverse' : ''}`}>
+              <div className={`flex items-center justify-between pt-2 border-t border-black/5 dark:border-white/5 mt-1 shrink-0 ${isRTL ? 'flex-row-reverse' : ''}`}>
                 <div className={`flex items-center gap-1.5 ${isRTL ? 'flex-row-reverse' : ''}`}>
                   <div className={`w-1.5 h-1.5 rounded-full ${(hoveredProduct.inventory || 0) > 0 ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-red-500'}`} />
                   <span className="text-[9px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-widest">

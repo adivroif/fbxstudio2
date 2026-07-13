@@ -9,7 +9,7 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import '../types';
 import { MaterialSettings, ModelPart, TextureSet } from '../types';
 
-const R2_PUBLIC_BASE_URL = 'https://pub-721b92b9c051433d993f7185396e4c79.r2.dev/';
+const R2_PUBLIC_BASE_URL = 'https://files.fbxstudio.co.il/';
 const R2_PROXY_BASE_URL = '';
 
 function safeDecodeRepeated(value: string): string {
@@ -71,8 +71,8 @@ function ensureUVs(geometry: THREE.BufferGeometry) {
     geometry.computeBoundingBox();
   }
   const bbox = geometry.boundingBox || new THREE.Box3();
-  const min = bbox.min;
-  const max = bbox.max;
+  const min = bbox.min || new THREE.Vector3(0, 0, 0);
+  const max = bbox.max || new THREE.Vector3(0, 0, 0);
   
   const width = Math.max(max.x - min.x, 0.0001);
   const height = Math.max(max.y - min.y, 0.0001);
@@ -822,7 +822,22 @@ const FBXModel: React.FC<FBXModelProps> = ({
 
     // Controlled queue execution to prevent WebGL/Browser freezing under heavy parallel decode load
     let currentIndex = 0;
-    const activeLoadsLimit = 8; // Process up to 8 textures concurrently to speed up loading and match browser network pipelines
+    const isIPad = typeof window !== 'undefined' && (
+      /iPad/i.test(navigator.userAgent) || 
+      (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
+    );
+    const isMobileDevice = typeof window !== 'undefined' && (
+      window.innerWidth < 768 || 
+      /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || 
+      isIPad
+    );
+    const isIOS = typeof window !== 'undefined' && (
+      /iPhone|iPad/i.test(navigator.userAgent) || 
+      isIPad
+    );
+    // iOS Safari has extremely tight RAM limits per tab. Spawning more than 2 concurrent texture decodes on high-res textures
+    // easily triggers an Out-of-Memory (OOM) crash. Limit concurrency to 2 on iOS/iPad, 3 on other mobile, and 6 on desktop.
+    const activeLoadsLimit = isIOS ? 1 : (isMobileDevice ? 3 : 6);
 
     const loadSingleTexture = ({ url: u, isColor }: { url: string; isColor: boolean }): Promise<void> => {
       return new Promise<void>((resolve) => {
@@ -1514,12 +1529,17 @@ const FBXModel: React.FC<FBXModelProps> = ({
     fbx.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh;
-        const partInfo = modelParts.find(p =>
-          (p.presentAtSite !== false) && (
-            p.partName.toLowerCase().trim() === mesh.name.toLowerCase().trim() ||
-            mesh.name.toLowerCase().trim().includes(p.partName.toLowerCase().trim())
-          )
-        );
+        const partInfo = modelParts.find(p => {
+          if (p.presentAtSite === false) return false;
+          const meshNameLower = mesh.name.toLowerCase().trim();
+          const pNameLower = p.partName.toLowerCase().trim();
+          const pKeyLower = (p.partKey || "").toLowerCase().trim();
+          
+          return (
+            (pNameLower !== "" && (meshNameLower === pNameLower || meshNameLower.includes(pNameLower))) ||
+            (pKeyLower !== "" && (meshNameLower === pKeyLower || meshNameLower.includes(pKeyLower)))
+          );
+        });
         if (partInfo?.description) {
           const tr = translatedParts[partInfo.id];
           detected.push({ id: partInfo.id, mesh, description: tr?.description || partInfo.description, name: tr?.name || mesh.name });
@@ -1660,6 +1680,9 @@ const FBXModel: React.FC<FBXModelProps> = ({
             // Dispose backface pass materials and meshes
             if (mesh.userData?.backFaceMesh) {
               const bMesh = mesh.userData.backFaceMesh as THREE.Mesh;
+              if (bMesh.geometry) {
+                try { bMesh.geometry.dispose(); } catch (err) { console.warn("Error disposing backFace geometry:", err); }
+              }
               if (bMesh.material) {
                 const bMats = Array.isArray(bMesh.material) ? bMesh.material : [bMesh.material];
                 bMats.forEach((m) => {
@@ -1694,6 +1717,11 @@ const FBXModel: React.FC<FBXModelProps> = ({
                   }
                 }
               });
+            }
+
+            // Dispose mesh geometry to free up GPU buffers (Crucial for mobile and memory performance)
+            if (mesh.geometry) {
+              try { mesh.geometry.dispose(); } catch (err) { console.warn("Error disposing mesh geometry:", err); }
             }
           }
         });
