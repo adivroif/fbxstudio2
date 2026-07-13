@@ -30,11 +30,9 @@ const CameraControls: React.FC<CameraControlsProps> = ({
   const t = translations[language];
   const isRTL = language === 'he' || language === 'ar';
 
-  const rightPos = isMobile 
-    ? '12px' 
-    : isCatalogCollapsed 
-      ? '24px' 
-      : '374px'; // 350px sidebar width + 24px offset
+  const rightPos = isCatalogCollapsed 
+    ? (isMobile ? '12px' : '24px') 
+    : (isMobile ? '314px' : '374px');
 
   return (
     <div 

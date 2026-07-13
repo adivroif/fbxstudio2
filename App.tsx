@@ -224,7 +224,7 @@ const App: React.FC = () => {
   const [isMoveMode, setIsMoveMode] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isCatalogCollapsed, setIsCatalogCollapsed] = useState(false);
+  const [isCatalogCollapsed, setIsCatalogCollapsed] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [catalogSearchQuery, setCatalogSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -517,7 +517,7 @@ const App: React.FC = () => {
     fetchCatalog();
   }, []);
 
-  // Automatically load model from URL search parameter (e.g. ?model=CHEST)
+  // Automatically load model from URL search parameter (e.g. ?model=ארון)
   useEffect(() => {
     if (catalogFiles.length === 0) return;
     
@@ -526,30 +526,84 @@ const App: React.FC = () => {
     
     if (modelParam) {
       const decodedParam = decodeURIComponent(modelParam).trim().toLowerCase();
-      const match = catalogFiles.find(f => {
+      
+      // 1. Try to find a direct match by file name (e.g., CHEST.fbx or CHEST)
+      const directMatch = catalogFiles.find(f => {
         const cleanName = f.name.replace(/\.fbx$/i, '').trim().toLowerCase();
         return cleanName === decodedParam || f.name.toLowerCase() === decodedParam;
       });
-      if (match) {
-        console.log(`[URLParam] Auto-loading model from query param: ${match.name}`);
-        handleAddFromUrl(match.url, match.name);
+      
+      if (directMatch) {
+        console.log(`[URLParam] Auto-loading model from query param (direct file name match): ${directMatch.name}`);
+        handleAddFromUrl(directMatch.url, directMatch.name);
+        return;
       }
+      
+      // 2. If no direct match, look up the productDisplayTitle or productTitle for all catalog files in parallel
+      const searchByDisplayTitle = async () => {
+        try {
+          const promises = catalogFiles.map(async (file) => {
+            try {
+              const res = await fetch(`/api/product-details?modelName=${encodeURIComponent(file.name.trim())}&v=3`);
+              if (res.ok) {
+                const text = await res.text();
+                if (text && text.trim().length > 0) {
+                  const data = JSON.parse(text);
+                  const result = Array.isArray(data) ? data[0] : data;
+                  if (result) {
+                    const displayTitle = cleanEscapedQuotes(result.productDisplayTitle || '').trim().toLowerCase();
+                    const productTitle = cleanEscapedQuotes(result.productTitle || '').trim().toLowerCase();
+                    const title = cleanEscapedQuotes(result.title || '').trim().toLowerCase();
+                    const name = cleanEscapedQuotes(result.name || '').trim().toLowerCase();
+                    
+                    if (
+                      displayTitle === decodedParam ||
+                      productTitle === decodedParam ||
+                      title === decodedParam ||
+                      name === decodedParam
+                    ) {
+                      return file;
+                    }
+                  }
+                }
+              }
+            } catch (err) {
+              // Ignore single file fetch error
+            }
+            return null;
+          });
+          
+          const results = await Promise.all(promises);
+          const foundMatch = results.find(f => f !== null);
+          if (foundMatch) {
+            console.log(`[URLParam] Auto-loading model from query param (matched by display title): ${foundMatch.name}`);
+            handleAddFromUrl(foundMatch.url, foundMatch.name);
+          }
+        } catch (globalErr) {
+          console.error("Error searching model by display title from URL:", globalErr);
+        }
+      };
+      
+      searchByDisplayTitle();
     }
   }, [catalogFiles]);
 
-  // Sync selected model to browser URL search params
+  // Sync selected model to browser URL search params using productDisplayTitle
   useEffect(() => {
     if (selectedModel) {
       const params = new URLSearchParams(window.location.search);
-      const currentParam = params.get('model');
-      const modelName = selectedModel.name.replace(/\.fbx$/i, '');
-      if (currentParam !== modelName) {
-        params.set('model', modelName);
+      const currentParam = params.get('model') ? decodeURIComponent(params.get('model') || '') : null;
+      
+      // Use the display title if available, otherwise fall back to model file name
+      const displayTitle = productDetails?.title || selectedModel.name.replace(/\.fbx$/i, '');
+      
+      if (currentParam !== displayTitle) {
+        params.set('model', displayTitle);
         const newUrl = `${window.location.pathname}?${params.toString()}`;
         window.history.replaceState({}, '', newUrl);
       }
     }
-  }, [selectedModel]);
+  }, [selectedModel, productDetails]);
 
   useEffect(() => {
     const fetchTextures = async () => {
@@ -1908,15 +1962,15 @@ const App: React.FC = () => {
           />
         </a>
         {selectedModel && (
-          <div className="animate-in fade-in slide-in-from-left-4 duration-500 pointer-events-auto flex flex-col gap-1 items-start text-left">
-            <div className={`text-xs sm:text-sm font-bold uppercase tracking-wider leading-tight ${isNightMode ? 'text-white' : 'text-zinc-800'}`}>
+          <div className="animate-in fade-in slide-in-from-left-4 duration-500 pointer-events-auto flex flex-col gap-1 items-start text-left max-w-[calc(100vw-220px)] sm:max-w-[400px] md:max-w-[600px]">
+            <div className={`text-xs sm:text-sm font-bold uppercase tracking-wider leading-tight whitespace-normal break-words line-clamp-2 ${isNightMode ? 'text-white' : 'text-zinc-800'}`}>
               {translatedSelectedModelName || selectedModel.name}
             </div>
             <button
               onClick={() => {
                 const params = new URLSearchParams(window.location.search);
-                const modelName = selectedModel.name.replace(/\.fbx$/i, '');
-                params.set('model', modelName);
+                const displayTitle = productDetails?.title || selectedModel.name.replace(/\.fbx$/i, '');
+                params.set('model', displayTitle);
                 const shareUrl = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
                 navigator.clipboard.writeText(shareUrl)
                   .then(() => {
@@ -2239,9 +2293,7 @@ const App: React.FC = () => {
           <div 
             className="absolute left-1/2 -translate-x-1/2 z-[51] flex items-center gap-2 sm:gap-4 bg-white/80 backdrop-blur-2xl px-4 sm:px-8 py-3 sm:py-5 rounded-[2rem] sm:rounded-[3rem] border border-black/5 shadow-2xl animate-in slide-in-from-bottom-10 duration-1000 max-w-[90vw] overflow-x-auto no-scrollbar transition-all duration-500 ease-in-out"
             style={{ 
-              bottom: isMobile 
-                ? (isCatalogCollapsed ? '52px' : '282px') 
-                : '24px'
+              bottom: '24px'
             }}
           >
             <div className="flex flex-col mr-2 sm:mr-4 shrink-0">
@@ -2357,9 +2409,9 @@ const App: React.FC = () => {
                     <button
                       onClick={() => {
                         const params = new URLSearchParams(window.location.search);
-                        const modelName = selectedModel?.name.replace(/\.fbx$/i, '') || '';
-                        if (modelName) {
-                          params.set('model', modelName);
+                        const displayTitle = productDetails?.title || selectedModel?.name.replace(/\.fbx$/i, '') || '';
+                        if (displayTitle) {
+                          params.set('model', displayTitle);
                           const shareUrl = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
                           navigator.clipboard.writeText(shareUrl)
                             .then(() => {
@@ -2757,9 +2809,7 @@ const App: React.FC = () => {
           <div 
             className={`absolute left-6 z-50 ${isMobile ? 'w-[calc(100%-3rem)] p-5 rounded-[2rem]' : 'w-80 p-6 rounded-[2rem]'} bg-white/95 backdrop-blur-2xl shadow-[0_25px_60px_rgba(0,0,0,0.2)] border border-white/40 animate-in slide-in-from-bottom-10 fade-in duration-500 ${isMobile ? 'max-h-[250px]' : 'max-h-[70vh]'} flex flex-col transition-all duration-500 ease-in-out`} 
             style={{ 
-              bottom: isMobile 
-                ? (isCatalogCollapsed ? '96px' : '305px') 
-                : '24px'
+              bottom: '24px'
             }}
             dir={isRTL ? 'rtl' : 'ltr'}
           >
@@ -2795,33 +2845,11 @@ const App: React.FC = () => {
 
       {/* CATALOG PANEL */}
       <div 
-        className={isMobile
-          ? "fixed bottom-0 left-0 right-0 z-40 h-[225px] sm:h-[250px] bg-white/90 dark:bg-zinc-950/90 backdrop-blur-2xl border-t border-black/15 dark:border-white/15 rounded-t-[2.5rem] shadow-[0_-12px_40px_rgba(0,0,0,0.12)] flex flex-col transition-all duration-500 ease-in-out"
-          : "fixed right-4 top-[88px] bottom-4 w-[320px] sm:w-[350px] z-40 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-2xl border border-black/15 dark:border-white/15 rounded-[2.5rem] shadow-[0_12px_40px_rgba(0,0,0,0.12)] flex flex-col transition-all duration-500 ease-in-out"
-        }
+        className="fixed right-3 sm:right-4 top-[76px] sm:top-[88px] bottom-3 sm:bottom-4 w-[290px] sm:w-[350px] z-40 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-2xl border border-black/15 dark:border-white/15 rounded-[2rem] sm:rounded-[2.5rem] shadow-[0_12px_40px_rgba(0,0,0,0.12)] flex flex-col transition-all duration-500 ease-in-out"
         style={{
-          transform: isMobile
-            ? `translateY(${isCatalogCollapsed ? '100%' : '0px'})`
-            : `translateX(${isCatalogCollapsed ? 'calc(100% + 24px)' : '0px'})`
+          transform: `translateX(${isCatalogCollapsed ? 'calc(100% + 24px)' : '0px'})`
         }}
       >
-        {/* Toggle Collapse/Expand Button (Mobile Bottom Panel Only) */}
-        {isMobile && (
-          <button
-            onClick={() => setIsCatalogCollapsed(!isCatalogCollapsed)}
-            className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-[calc(100%-1px)] w-28 h-8 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-2xl border-t border-x border-black/15 dark:border-white shadow-[0_-12px_24px_rgba(0,0,0,0.08)] flex items-center justify-center rounded-t-2xl z-50 group hover:text-yellow-600 dark:hover:text-yellow-500 transition-all duration-300 pointer-events-auto cursor-pointer"
-            title={language === 'he' ? (isCatalogCollapsed ? 'פתח קטלוג' : 'סגור קטלוג') : (isCatalogCollapsed ? 'Open Catalog' : 'Close Catalog')}
-          >
-            <div className="flex items-center justify-center w-full h-full pb-0.5">
-              <div className={`transition-transform duration-500 ease-in-out ${isCatalogCollapsed ? 'rotate-180' : ''}`}>
-                <svg className="w-5 h-5 text-zinc-400 dark:text-white group-hover:text-yellow-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
-            </div>
-          </button>
-        )}
-
         <Sidebar 
           models={models} 
           selectedId={selectedId} 
@@ -2831,7 +2859,7 @@ const App: React.FC = () => {
           onRemove={handleRemoveModel} 
           language={language}
           isMobile={isMobile}
-          isSideLayout={!isMobile}
+          isSideLayout={true}
           catalogFiles={catalogFiles}
           isLoadingCatalog={isLoadingCatalog}
           cachedUrls={cachedUrls}

@@ -894,7 +894,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     }}
                     className={`${animClass} flex flex-row gap-3 p-2.5 bg-zinc-50/70 dark:bg-zinc-900/60 border-[1px] rounded-3xl transition-all group shadow-sm overflow-hidden relative items-center hover:scale-[1.02] active:scale-[0.98] ${
                       isSideLayout ? 'w-full' : 'w-[260px] sm:w-[280px]'
-                    } h-[100px] sm:h-[110px] shrink-0 cursor-pointer ${
+                    } min-h-[100px] sm:min-h-[110px] h-auto py-3 shrink-0 cursor-pointer ${
                       isSelected 
                         ? 'border-yellow-500 dark:border-white bg-yellow-50/20 dark:bg-white/10 font-bold' 
                         : isOutOfStock 
@@ -933,7 +933,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
                     <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-1 w-full">
-                        <span className={`text-[11px] sm:text-[12px] font-black uppercase tracking-wider transition-colors leading-tight line-clamp-2 break-words whitespace-normal flex-1 ${
+                        <span className={`text-[11px] sm:text-[12px] font-black uppercase tracking-wider transition-colors leading-tight break-words whitespace-normal flex-1 ${
                           isOutOfStock ? 'text-zinc-400 line-through decoration-red-500/50 decoration-2' : isSelected ? 'text-yellow-600 dark:text-yellow-500' : 'text-zinc-800 dark:text-zinc-200 group-hover:text-yellow-600 dark:group-hover:text-yellow-500'
                         }`}>
                           {displayName}
