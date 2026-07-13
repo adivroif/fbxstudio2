@@ -14,6 +14,7 @@ interface SidebarProps {
   onAddFromUrl: (url: string, name: string) => void;
   language: Language;
   isMobile?: boolean;
+  isSideLayout?: boolean;
   catalogFiles: any[];
   isLoadingCatalog: boolean;
   cachedUrls?: Record<string, boolean>;
@@ -73,6 +74,7 @@ const isModelTextureMatch = (fileName: string, modelName: string): boolean => {
 
 const Sidebar: React.FC<SidebarProps> = ({ 
   models, selectedId, onSelect, onAddFile, onRemove, onAddFromUrl, language, isMobile = false,
+  isSideLayout = !isMobile,
   catalogFiles, isLoadingCatalog,
   cachedUrls = {},
   prefetchSummary = { loaded: 0, total: 0 },
@@ -123,6 +125,8 @@ const Sidebar: React.FC<SidebarProps> = ({
       return {};
     }
   });
+
+  const [catalogTab, setCatalogTab] = React.useState<'all' | 'categories'>('all');
 
   const uploadTranslations = {
     en: {
@@ -705,57 +709,88 @@ const Sidebar: React.FC<SidebarProps> = ({
   }, [selectedCategory, selectedSubCategory, visibleFiles, categories, searchQuery, translatedModels, apiTitles, productToSubCategory, productToCategory, apiCategories]);
 
   return (
-    <div className="w-full h-full flex flex-col p-2.5 sm:p-3 overflow-hidden select-none bg-white dark:bg-zinc-950" dir={isRTL ? 'rtl' : 'ltr'}>
-      {/* Top row: Title, Refresh Button, and Categories scroll */}
-      <div className="flex flex-row items-center justify-between gap-3 px-1 sm:px-3 mb-2 h-9 shrink-0">
-        <div className="hidden sm:flex items-center gap-1.5 shrink-0">
-          <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-pulse"></div>
-          <h2 className={`text-[11px] sm:text-[12px] font-black ${isRTL ? '' : 'uppercase'} ${isRTL ? 'tracking-normal' : 'tracking-wider'} text-zinc-800 dark:text-zinc-200`}>
-            {t.productsCatalog}
+    <div className="w-full h-full flex flex-col p-3 sm:p-4 overflow-hidden select-none bg-transparent" dir={isRTL ? 'rtl' : 'ltr'}>
+      {/* Top row: Title & Refresh Button */}
+      <div className="flex flex-row items-start justify-between gap-3 px-1 sm:px-3 mb-2 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0">
+          <div className="w-2.5 h-2.5 bg-orange-500 rounded-full animate-pulse shrink-0"></div>
+          <h2 className="text-[12px] sm:text-[14px] leading-tight font-black tracking-widest text-zinc-900 dark:text-zinc-100 uppercase flex flex-col text-left">
+            <span>PRODUCTS</span>
+            <span className="text-zinc-400 dark:text-zinc-500">CATALOG</span>
           </h2>
-          <button 
-            onClick={fetchR2Files}
-            className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-zinc-400 hover:text-yellow-500 transition-all ml-1 shrink-0"
-            title={language === 'he' ? 'רענן' : 'Refresh'}
-          >
-            <svg className={`w-3.5 h-3.5 ${isLoadingR2 ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
         </div>
+        
+        <button 
+          onClick={fetchR2Files}
+          className="p-1.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 rounded-xl text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white transition-all shrink-0 border border-black/5 dark:border-white/5 shadow-sm"
+          title={language === 'he' ? 'רענן' : 'Refresh'}
+        >
+          <svg className={`w-4 h-4 ${isLoadingR2 ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
+      </div>
 
-        {/* Categories horizontal list */}
-        <div className="flex-1 flex flex-row gap-1.5 overflow-x-auto overflow-y-hidden scrollbar-none py-0.5 px-1 items-center justify-start min-w-0" style={{ scrollbarWidth: 'none' }}>
+      {/* Centered Segment Tab Controller */}
+      <div className="flex justify-center mb-2.5 shrink-0">
+        <div className="flex bg-zinc-100/90 dark:bg-zinc-900/90 p-1 rounded-full text-[9px] sm:text-[10px] font-black tracking-wider border border-black/5 dark:border-white/5 shadow-inner">
           <button
-            onClick={() => setSelectedCategory('all')}
-            className={`px-3 py-1 text-[9px] sm:text-[10px] font-black uppercase tracking-wider rounded-lg transition-all whitespace-nowrap shrink-0 border ${
-              selectedCategory === 'all'
-                ? 'bg-yellow-500 text-zinc-950 border-yellow-500 shadow-sm font-black'
-                : 'bg-zinc-100 text-zinc-500 hover:text-zinc-800 hover:bg-zinc-200/60 border-transparent dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800'
+            onClick={() => {
+              setCatalogTab('all');
+              setSelectedCategory('all');
+            }}
+            className={`px-5 py-1.5 rounded-full transition-all duration-300 uppercase ${
+              catalogTab === 'all'
+                ? 'bg-white text-zinc-900 shadow-sm font-black dark:bg-zinc-800 dark:text-white'
+                : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
             }`}
           >
-            {t.all}
+            {language === 'he' ? 'הכל' : 'ALL'}
           </button>
-          {Object.keys(categories).map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-3 py-1 text-[9px] sm:text-[10px] font-black uppercase tracking-wider rounded-lg transition-all whitespace-nowrap shrink-0 border ${
-                selectedCategory === cat
-                  ? 'bg-yellow-500 text-zinc-950 border-yellow-500 shadow-sm font-black'
-                  : 'bg-zinc-100 text-zinc-500 hover:text-zinc-800 hover:bg-zinc-200/60 border-transparent dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800'
-              }`}
-            >
-              {translatedCategories[cat] || cat}
-              <span className="mx-1 text-[8px] font-mono opacity-50 inline-block" dir="ltr">({categories[cat]?.length || 0})</span>
-            </button>
-          ))}
+          <button
+            onClick={() => {
+              setCatalogTab('categories');
+              const catKeys = Object.keys(categories);
+              if (catKeys.length > 0 && selectedCategory === 'all') {
+                setSelectedCategory(catKeys[0]);
+              }
+            }}
+            className={`px-5 py-1.5 rounded-full transition-all duration-300 uppercase ${
+              catalogTab === 'categories'
+                ? 'bg-white text-zinc-900 shadow-sm font-black dark:bg-zinc-800 dark:text-white'
+                : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
+            }`}
+          >
+            {language === 'he' ? 'קטגוריות' : 'CATEGORIES'}
+          </button>
         </div>
       </div>
 
+      {/* Horizontal Category Pill List (Shown only when CATEGORIES selected) */}
+      {catalogTab === 'categories' && (
+        <div className="px-1 sm:px-3 mb-2.5 shrink-0 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex flex-row gap-1.5 overflow-x-auto overflow-y-hidden scrollbar-none py-0.5 items-center justify-start min-w-0" style={{ scrollbarWidth: 'none' }}>
+            {Object.keys(categories).map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-3 py-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-wider rounded-xl transition-all whitespace-nowrap shrink-0 border ${
+                  selectedCategory === cat
+                    ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm dark:bg-white dark:text-zinc-950 dark:border-white'
+                    : 'bg-zinc-50 text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100 border-black/5 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200'
+                }`}
+              >
+                {translatedCategories[cat] || cat}
+                <span className="mx-1 text-[8px] font-mono opacity-50 inline-block" dir="ltr">({categories[cat]?.length || 0})</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Subcategories Row */}
-      {availableSubCategories.length > 0 && (
-        <div className="flex flex-row items-center gap-2 px-1 sm:px-3 mb-2 h-8 shrink-0 border-t border-black/5 dark:border-white/5 pt-1.5" dir={isRTL ? 'rtl' : 'ltr'}>
+      {catalogTab === 'categories' && availableSubCategories.length > 0 && (
+        <div className="flex flex-row items-center gap-2 px-1 sm:px-3 mb-2.5 h-8 shrink-0 border-t border-black/5 dark:border-white/5 pt-1.5 animate-in fade-in duration-300" dir={isRTL ? 'rtl' : 'ltr'}>
           <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-zinc-400 dark:text-zinc-500 shrink-0">
             {language === 'he' ? 'קטגוריה משנית:' : 'Subcategory:'}
           </span>
@@ -800,7 +835,11 @@ const Sidebar: React.FC<SidebarProps> = ({
         ) : (
           <div 
             key={isCatalogCollapsed ? 'collapsed' : 'expanded'}
-            className="w-full h-full flex flex-row overflow-x-auto overflow-y-hidden items-center pb-1 gap-3 custom-scroll px-1.5 scrollbar-thin select-none"
+            className={`w-full h-full flex ${
+              isSideLayout 
+                ? 'flex-col overflow-y-auto overflow-x-hidden pb-4 px-1 gap-4' 
+                : 'flex-row overflow-x-auto overflow-y-hidden items-center pb-1 gap-3 px-1.5 scrollbar-thin'
+            } custom-scroll select-none`}
           >
             {filteredProducts.length === 0 ? (
               <div className="text-[10px] text-zinc-400 font-bold text-center py-4 italic w-full">
@@ -823,10 +862,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                 const description = translation?.description || descriptions[normalizedName];
                 const isSelected = selectedId === file.id || selectedModel?.url === file.url;
 
-                // On iPad, animate item entrance from right to left with a staggered delay
+                // Animate item entrance from right to left with a staggered delay in side layout
                 const delayMs = index * 50;
-                const animClass = isIPad ? "animate-slide-in-rtl opacity-0" : "";
-                const animStyle = isIPad ? { animationDelay: `${delayMs}ms`, animationFillMode: 'forwards' } : {};
+                const animClass = isSideLayout ? "animate-slide-in-rtl opacity-0" : "";
+                const animStyle = isSideLayout ? { animationDelay: `${delayMs}ms`, animationFillMode: 'forwards' } : {};
 
                 return (
                   <div 
@@ -853,7 +892,9 @@ const Sidebar: React.FC<SidebarProps> = ({
                       }
                       onAddFromUrl(file.url, file.name);
                     }}
-                    className={`${animClass} flex flex-row gap-2.5 p-2 bg-zinc-50/70 dark:bg-zinc-900/60 border-[1px] rounded-2xl transition-all group shadow-sm overflow-hidden relative items-center hover:scale-[1.02] active:scale-[0.98] w-[230px] sm:w-[250px] h-[86px] shrink-0 cursor-pointer ${
+                    className={`${animClass} flex flex-row gap-3 p-2.5 bg-zinc-50/70 dark:bg-zinc-900/60 border-[1px] rounded-3xl transition-all group shadow-sm overflow-hidden relative items-center hover:scale-[1.02] active:scale-[0.98] ${
+                      isSideLayout ? 'w-full' : 'w-[260px] sm:w-[280px]'
+                    } h-[100px] sm:h-[110px] shrink-0 cursor-pointer ${
                       isSelected 
                         ? 'border-yellow-500 dark:border-white bg-yellow-50/20 dark:bg-white/10 font-bold' 
                         : isOutOfStock 
@@ -872,7 +913,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     )}
 
                     <div className="shrink-0">
-                      <div className="w-[64px] h-[64px] bg-white rounded-xl relative overflow-hidden border-[1px] border-black/10 dark:border-white/20">
+                      <div className="w-[72px] h-[72px] bg-white rounded-2xl relative overflow-hidden border-[1px] border-black/10 dark:border-white/20">
                         {thumbnail ? (
                           <img 
                             src={thumbnail.url} 
@@ -892,7 +933,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
                     <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-1 w-full">
-                        <span className={`text-[11px] font-black uppercase tracking-wider transition-colors leading-tight line-clamp-none break-words whitespace-normal flex-1 ${
+                        <span className={`text-[11px] sm:text-[12px] font-black uppercase tracking-wider transition-colors leading-tight line-clamp-2 break-words whitespace-normal flex-1 ${
                           isOutOfStock ? 'text-zinc-400 line-through decoration-red-500/50 decoration-2' : isSelected ? 'text-yellow-600 dark:text-yellow-500' : 'text-zinc-800 dark:text-zinc-200 group-hover:text-yellow-600 dark:group-hover:text-yellow-500'
                         }`}>
                           {displayName}
@@ -918,7 +959,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                       <div className="flex items-center justify-between gap-1.5 w-full mt-0.5">
                         {description ? (
                           <div 
-                            className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium leading-tight line-clamp-1 flex-1"
+                            className="text-[9px] sm:text-[10px] text-zinc-500 dark:text-zinc-400 font-medium leading-normal line-clamp-2 sm:line-clamp-3 flex-1"
                             dangerouslySetInnerHTML={{ __html: description }}
                           />
                         ) : (

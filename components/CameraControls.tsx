@@ -9,6 +9,8 @@ interface CameraControlsProps {
   language: Language;
   hasAnimations?: boolean;
   isSidebarOpen?: boolean;
+  isCatalogCollapsed?: boolean;
+  isMobile?: boolean;
   onOrbitStart?: (direction: 'up' | 'down' | 'left' | 'right') => void;
   onOrbitEnd?: () => void;
 }
@@ -20,18 +22,27 @@ const CameraControls: React.FC<CameraControlsProps> = ({
   language, 
   hasAnimations, 
   isSidebarOpen,
+  isCatalogCollapsed = false,
+  isMobile = false,
   onOrbitStart,
   onOrbitEnd
 }) => {
   const t = translations[language];
   const isRTL = language === 'he' || language === 'ar';
 
+  const rightPos = isMobile 
+    ? '12px' 
+    : isCatalogCollapsed 
+      ? '24px' 
+      : '374px'; // 350px sidebar width + 24px offset
+
   return (
     <div 
       dir="ltr"
-      className="fixed top-[calc(50%-40px)] -translate-y-1/2 flex flex-col gap-2 sm:gap-3.5 z-[200] right-3 sm:right-6 pointer-events-auto transition-transform duration-500 ease-in-out items-end"
+      className="fixed top-[calc(50%-40px)] -translate-y-1/2 flex flex-col gap-2 sm:gap-3.5 z-[200] pointer-events-auto transition-all duration-500 ease-in-out items-end"
       style={{
-        transform: 'translateY(-50%)'
+        transform: 'translateY(-50%)',
+        right: rightPos
       }}
     >
       {/* Zoom In, Zoom Out & Reset Controls */}

@@ -2068,6 +2068,19 @@ const App: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Hamburger Menu Button */}
+        <button
+          onClick={() => setIsCatalogCollapsed(!isCatalogCollapsed)}
+          className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl shadow-xl border border-black/5 flex flex-col items-center justify-center transition-all duration-300 group ${!isCatalogCollapsed ? 'bg-zinc-800 text-white border-zinc-800' : 'bg-white text-zinc-600 hover:text-black hover:bg-zinc-50'}`}
+          title={language === 'he' ? (isCatalogCollapsed ? 'פתח קטלוג' : 'סגור קטלוג') : (isCatalogCollapsed ? 'Open Catalog' : 'Close Catalog')}
+        >
+          <div className="w-5 sm:w-6 flex flex-col gap-1 sm:gap-1.5">
+            <span className={`h-0.5 w-full bg-current rounded-full transition-all duration-300 ${!isCatalogCollapsed ? 'rotate-45 translate-y-[6px] sm:translate-y-[7.5px]' : ''}`} />
+            <span className={`h-0.5 w-full bg-current rounded-full transition-all duration-300 ${!isCatalogCollapsed ? 'opacity-0 scale-x-0' : ''}`} />
+            <span className={`h-0.5 w-full bg-current rounded-full transition-all duration-300 ${!isCatalogCollapsed ? '-rotate-45 -translate-y-[6px] sm:-translate-y-[7.5px]' : ''}`} />
+          </div>
+        </button>
       </div>
 
       {/* CENTER - VIEWPORT */}
@@ -2226,11 +2239,9 @@ const App: React.FC = () => {
           <div 
             className="absolute left-1/2 -translate-x-1/2 z-[51] flex items-center gap-2 sm:gap-4 bg-white/80 backdrop-blur-2xl px-4 sm:px-8 py-3 sm:py-5 rounded-[2rem] sm:rounded-[3rem] border border-black/5 shadow-2xl animate-in slide-in-from-bottom-10 duration-1000 max-w-[90vw] overflow-x-auto no-scrollbar transition-all duration-500 ease-in-out"
             style={{ 
-              bottom: isIPad 
-                ? (isCatalogCollapsed ? '96px' : '310px') 
-                : (isMobile 
-                  ? (isCatalogCollapsed ? '105px' : '315px') 
-                  : (isCatalogCollapsed ? '52px' : '282px'))
+              bottom: isMobile 
+                ? (isCatalogCollapsed ? '52px' : '282px') 
+                : '24px'
             }}
           >
             <div className="flex flex-col mr-2 sm:mr-4 shrink-0">
@@ -2744,20 +2755,18 @@ const App: React.FC = () => {
         {/* BOTTOM LEFT DESCRIPTION BOX */}
         {activePart && (
           <div 
-            className={`absolute left-6 z-50 ${isIPad ? 'w-[280px] p-5 rounded-[1.75rem]' : 'w-[calc(100%-3rem)] sm:w-80 p-5 sm:p-6 rounded-[2rem]'} bg-white/95 backdrop-blur-2xl shadow-[0_25px_60px_rgba(0,0,0,0.2)] border border-white/40 animate-in slide-in-from-bottom-10 fade-in duration-500 ${isIPad ? 'max-h-[250px]' : 'max-h-[70vh]'} flex flex-col transition-all duration-500 ease-in-out`} 
+            className={`absolute left-6 z-50 ${isMobile ? 'w-[calc(100%-3rem)] p-5 rounded-[2rem]' : 'w-80 p-6 rounded-[2rem]'} bg-white/95 backdrop-blur-2xl shadow-[0_25px_60px_rgba(0,0,0,0.2)] border border-white/40 animate-in slide-in-from-bottom-10 fade-in duration-500 ${isMobile ? 'max-h-[250px]' : 'max-h-[70vh]'} flex flex-col transition-all duration-500 ease-in-out`} 
             style={{ 
-              bottom: isIPad 
-                ? (isCatalogCollapsed ? '96px' : '262px') 
-                : (isCatalogCollapsed 
-                  ? (isMobile ? '96px' : '44px') 
-                  : (isMobile ? '295px' : '282px')) 
+              bottom: isMobile 
+                ? (isCatalogCollapsed ? '96px' : '305px') 
+                : '24px'
             }}
             dir={isRTL ? 'rtl' : 'ltr'}
           >
-            <div className={`flex items-center justify-between shrink-0 ${isIPad ? 'mb-2.5' : 'mb-3 sm:mb-4'}`}>
+            <div className={`flex items-center justify-between shrink-0 mb-3 sm:mb-4`}>
               <div className="flex flex-col">
                 <span className="text-[8px] font-black uppercase tracking-[0.3em] text-blue-600 leading-none mb-1">{t.partDetails}</span>
-                <h3 className={`font-black text-zinc-800 uppercase tracking-tight break-words whitespace-normal max-w-[180px] sm:max-w-none ${isIPad ? 'text-sm sm:text-base leading-snug' : 'text-base sm:text-lg'}`}>{activePart.name}</h3>
+                <h3 className={`font-black text-zinc-800 uppercase tracking-tight break-words whitespace-normal max-w-[180px] sm:max-w-none text-base sm:text-lg`}>{activePart.name}</h3>
               </div>
               <button 
                 onClick={() => { 
@@ -2766,17 +2775,17 @@ const App: React.FC = () => {
                   stopSpeaking(); 
                   setTargetView({ pos: defaultCamPos, lookAt: new THREE.Vector3(0, 0, 0) });
                 }}
-                className={`flex items-center justify-center rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-400 hover:text-zinc-800 transition-all ${isIPad ? 'w-7 h-7' : 'w-8 h-8 sm:w-10 sm:h-10 sm:rounded-2xl'} ${isRTL ? 'mr-auto' : 'ml-auto'}`}
+                className={`flex items-center justify-center rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-400 hover:text-zinc-800 transition-all w-8 h-8 sm:w-10 sm:h-10 sm:rounded-2xl ${isRTL ? 'mr-auto' : 'ml-auto'}`}
               >
-                <svg className={isIPad ? 'w-3.5 h-3.5' : 'w-4 h-4 sm:w-5 sm:h-5'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-            <div className={`h-[1px] w-full bg-zinc-100 shrink-0 ${isIPad ? 'mb-2.5' : 'mb-3 sm:mb-4'}`}></div>
+            <div className="h-[1px] w-full bg-zinc-100 shrink-0 mb-3 sm:mb-4"></div>
             <div className="overflow-y-auto pr-2 no-scrollbar flex-1">
               <div 
-                className={`text-zinc-600 leading-relaxed font-medium whitespace-pre-wrap ${isIPad ? 'text-xs sm:text-sm' : 'text-xs sm:text-sm'}`}
+                className="text-zinc-600 leading-relaxed font-medium whitespace-pre-wrap text-xs sm:text-sm"
                 dangerouslySetInnerHTML={{ __html: activePart.description || t.noDescription }}
               />
             </div>
@@ -2784,17 +2793,20 @@ const App: React.FC = () => {
         )}
       </div>
 
-      {/* STATIC BOTTOM CATALOG PANEL */}
+      {/* CATALOG PANEL */}
       <div 
-        className="fixed bottom-0 left-0 right-0 z-40 h-[205px] sm:h-[230px] bg-white/90 dark:bg-zinc-950/90 backdrop-blur-2xl border-t border-black/15 dark:border-white/15 rounded-t-[2rem] shadow-[0_-12px_40px_rgba(0,0,0,0.12)] flex flex-col transition-all duration-500 ease-in-out"
+        className={isMobile
+          ? "fixed bottom-0 left-0 right-0 z-40 h-[225px] sm:h-[250px] bg-white/90 dark:bg-zinc-950/90 backdrop-blur-2xl border-t border-black/15 dark:border-white/15 rounded-t-[2.5rem] shadow-[0_-12px_40px_rgba(0,0,0,0.12)] flex flex-col transition-all duration-500 ease-in-out"
+          : "fixed right-4 top-[88px] bottom-4 w-[320px] sm:w-[350px] z-40 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-2xl border border-black/15 dark:border-white/15 rounded-[2.5rem] shadow-[0_12px_40px_rgba(0,0,0,0.12)] flex flex-col transition-all duration-500 ease-in-out"
+        }
         style={{
-          transform: isIPad 
-            ? `translateX(${isCatalogCollapsed ? '100%' : '0px'})` 
-            : `translateY(${isCatalogCollapsed ? '100%' : '0px'})`
+          transform: isMobile
+            ? `translateY(${isCatalogCollapsed ? '100%' : '0px'})`
+            : `translateX(${isCatalogCollapsed ? 'calc(100% + 24px)' : '0px'})`
         }}
       >
-        {/* Toggle Collapse/Expand Button (Non-iPad) */}
-        {!isIPad && (
+        {/* Toggle Collapse/Expand Button (Mobile Bottom Panel Only) */}
+        {isMobile && (
           <button
             onClick={() => setIsCatalogCollapsed(!isCatalogCollapsed)}
             className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-[calc(100%-1px)] w-28 h-8 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-2xl border-t border-x border-black/15 dark:border-white shadow-[0_-12px_24px_rgba(0,0,0,0.08)] flex items-center justify-center rounded-t-2xl z-50 group hover:text-yellow-600 dark:hover:text-yellow-500 transition-all duration-300 pointer-events-auto cursor-pointer"
@@ -2819,6 +2831,7 @@ const App: React.FC = () => {
           onRemove={handleRemoveModel} 
           language={language}
           isMobile={isMobile}
+          isSideLayout={!isMobile}
           catalogFiles={catalogFiles}
           isLoadingCatalog={isLoadingCatalog}
           cachedUrls={cachedUrls}
@@ -2831,31 +2844,6 @@ const App: React.FC = () => {
         />
       </div>
 
-      {isIPad && (
-        <button
-          onClick={() => setIsCatalogCollapsed(!isCatalogCollapsed)}
-          className="fixed right-0 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-2xl border-y border-l border-r-0 border-black/15 dark:border-white/15 shadow-md flex items-center justify-center z-50 group hover:text-yellow-600 dark:hover:text-yellow-500 transition-all duration-500 ease-in-out cursor-pointer w-8 h-24 rounded-l-2xl rounded-r-none"
-          style={{
-            bottom: isCatalogCollapsed ? '24px' : '230px'
-          }}
-          title={language === 'he' ? (isCatalogCollapsed ? 'פתח קטלוג' : 'סגור קטלוג') : (isCatalogCollapsed ? 'Open Catalog' : 'Close Catalog')}
-        >
-          <div className="flex items-center justify-center w-full h-full">
-            {isCatalogCollapsed ? (
-              /* Collapsed (closed) state: arrow points left to indicate opening from right to left */
-              <svg className="w-5 h-5 text-zinc-400 dark:text-white group-hover:text-yellow-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7" />
-              </svg>
-            ) : (
-              /* Expanded (open) state: arrow points right to indicate closing towards right */
-              <svg className="w-5 h-5 text-zinc-400 dark:text-white group-hover:text-yellow-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M9 5l7 7-7 7" />
-              </svg>
-            )}
-          </div>
-        </button>
-      )}
-
       <CameraControls 
         onAction={handleCameraAction} 
         isPlayingAnimation={selectedModel?.settings.isPlayingAnimation}
@@ -2863,6 +2851,8 @@ const App: React.FC = () => {
         language={language}
         hasAnimations={selectedModel?.hasAnimations}
         isSidebarOpen={false}
+        isCatalogCollapsed={isCatalogCollapsed}
+        isMobile={isMobile}
         onOrbitStart={(dir) => {
           setTargetView(null);
           setActivePart(null);
